@@ -28,7 +28,7 @@
 #include <sys/file.h>
 #include <sys/mman.h>
 #include <asm/mman.h>
-#include <numaif.h>
+#include <linux/mempolicy.h>
 #include <linux/ioctl.h>
 #include "uvmce.h"                           
 #include "numatools.h"                           

@@ -1,6 +1,7 @@
 INC_DIR=../include
 CFLAGS=-g -I$(INC_DIR)
-LDFLAGS=-lnuma
+#LDFLAGS=-lnuma
+LDFLAGS=/usr/lib64/libnuma.so.1
 SRCS   = error_inject_tool.c common.c  
 SRCS_1 = common.c migrate_pages.c 
 OBJS   = $(SRCS:.c=.o)
