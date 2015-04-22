@@ -15,22 +15,38 @@
 #include <linux/fs.h>
 #include <linux/miscdevice.h>
 #include <linux/version.h>
+#include <asm/ioctl.h>                                                   
+ 
+#define SCMD_MAGIC 's'                                                   
+ 
+#define SCMD_IOCGETD  _IOR(SCMD_MAGIC, 1 , char *) //get driver data     
+#define SCMD_IOCSETD  _IOW(SCMD_MAGIC, 2 , char *) //set driver data     
+#define SCMD_IOCXCHD  _IOWR(SCMD_MAGIC,3 , char *) //exchange driver data
+ 
 
 MODULE_LICENSE("GPL");
 MODULE_INFO(supported, "external");
 
 #define UVMCE_NAME "uvmce"
+int uvmce_ioctl(struct inode *, struct file *, unsigned int , unsigned long );
 
-static struct file_operations ex_fops = {
-	owner: THIS_MODULE,
-	.ioctl = uvmce_ioctl,
+static struct file_operations uvmce_fops = {
+    .owner = THIS_MODULE,
+//    .open = my_open,
+//    .release = my_close,
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35))
+    .ioctl = uvmce_ioctl
+#else
+    .unlocked_ioctl = uvmce_ioctl
+#endif
 };
+
 
 /* The register structure for /dev/ex_misc */
 static struct miscdevice uvmce_miscdev = {
 	MISC_DYNAMIC_MINOR,
 	UVMCE_NAME,
-	&ex_fops,
+	&uvmce_fops,
 };
 
 
@@ -40,12 +56,7 @@ uvmce_ioctl(struct inode *inode, struct file *file,
 {
 	int error = 0;
 
-	switch (ioctl_num) {
-	case REG_EI:
-		break;
-	case KTHREAD_BIND:
-		break;
-	}
+
 	return error;
 }
 int 

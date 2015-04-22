@@ -1,8 +1,12 @@
+
 FLAGS += -D__KERNEL__ -DMODULE -g
 
-obj-m += bench_extint_mod.o
-bench_extint_mod-objs := bench_extint.o
+obj-m += uv_mce_inject.o
+
+all:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
 
 clean:
-	rm -f *.mod.* *.o *.ko *.symvers .bench_extint* 
-	rm -rf *.tmp_versions
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
+
+
