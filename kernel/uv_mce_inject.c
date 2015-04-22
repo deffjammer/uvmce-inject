@@ -9,6 +9,7 @@
 #include <linux/types.h>
 #include <linux/init.h>
 #include <linux/errno.h>
+#include <linux/slab.h>
 #include <linux/interrupt.h>
 #include <linux/kthread.h>
 #include <linux/sched.h>
@@ -47,6 +48,8 @@ static struct file_operations uvmce_fops = {
 };
 
 
+spinlock_t              uvmce_lock; 
+
 /* The register structure for /dev/ex_misc */
 static struct miscdevice uvmce_miscdev = {
 	MISC_DYNAMIC_MINOR,
@@ -54,6 +57,25 @@ static struct miscdevice uvmce_miscdev = {
 	&uvmce_fops,
 };
 
+
+int uvmce_inject_ume(void)
+{
+        unsigned long flags;
+	unsigned long *poison_memory;
+        //int pnode = uv_blade_to_pnode(gru->gs_blade_id);
+
+	poison_memory = kmalloc(4096, GFP_USER);
+	printk ("Allocated %p\n", poison_memory); 
+        spin_lock_irqsave(&uvmce_lock, flags);
+        /* Update idef2upd - TRi0Cur (DW 7: 2nd DW of QW 3) */
+        //uv_write_global_mmr64(0 /*pnode*/, UV_MMR_SCRATCH_1, 0x8000000100100000);
+        //uv_write_global_mmr64(0 /*pnode*/, write_data1_mmr, 0x100);
+
+        spin_unlock_irqrestore(&uvmce_lock, flags);
+	kfree(poison_memory);
+	return 0;
+
+}
 
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35))
@@ -67,6 +89,7 @@ static long uvmce_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
     {
         case UVMCE_INJECT_UME:
 	    printk("UVMCE_INJECT_UME\n");
+	    uvmce_inject_ume();
             break;
 #if 0
         case QUERY_GET_VARIABLES:
