@@ -17,6 +17,11 @@
 #include <linux/miscdevice.h>
 #include <linux/version.h>
 #include <linux/ioctl.h>                                                   
+#include <linux/io.h>                                                   
+#include <asm/uv/uv.h>
+#include <asm/uv/uv_hub.h>
+#include <asm/uv/uv_mmrs.h>
+
 #include "../include/uvmce.h" 
 
 //BMC:r001i01b> mmr harp0.0 0x2d0b00 0x8000000100100000
@@ -24,7 +29,7 @@
 #define UV_MMR_SCRATCH_1      0x2d0b00 
 #define UV_MMR_SMI_SCRATCH_2  0x605d8 
 #define UV_MMR_SMI_WALK_3     0x100 
-
+#define POISON_BIT            0x8000000000000000
 MODULE_LICENSE("GPL");
 MODULE_INFO(supported, "external");
 
@@ -62,16 +67,28 @@ int uvmce_inject_ume(void)
 {
         unsigned long flags;
 	unsigned long *poison_memory;
+	unsigned long pm;
+	//unsigned long bus;
         //int pnode = uv_blade_to_pnode(gru->gs_blade_id);
-
 	poison_memory = kmalloc(4096, GFP_USER);
-	printk ("Allocated %p\n", poison_memory); 
+	printk ("Virt Alcd \t%#lx \n", poison_memory); 
+	pm = virt_to_phys(poison_memory);
+	printk ("Physical \t%#018lx \n",pm); 
+	//pm = pm >> PAGE_SHIFT;
+	//printk ("Phys shift \t%#018lx \n",pm); 
+
+	pm |= (1UL <<63);
+	printk ("Poison PB  \t%#018lx \n",pm ); 
+
+	//Same thing
+	//bus = virt_to_bus(poison_memory);
+	//printk ("Bus addr %#018lx \n", bus);
         spin_lock_irqsave(&uvmce_lock, flags);
-        /* Update idef2upd - TRi0Cur (DW 7: 2nd DW of QW 3) */
-        //uv_write_global_mmr64(0 /*pnode*/, UV_MMR_SCRATCH_1, 0x8000000100100000);
-        //uv_write_global_mmr64(0 /*pnode*/, write_data1_mmr, 0x100);
+        uv_write_global_mmr64(0 /*pnode*/, UV_MMR_SCRATCH_1, pm);
+        uv_write_global_mmr64(0 /*pnode*/, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
 
         spin_unlock_irqrestore(&uvmce_lock, flags);
+	memset(&poison_memory, 0, sizeof(unsigned long));
 	kfree(poison_memory);
 	return 0;
 
