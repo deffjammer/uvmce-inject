@@ -13,6 +13,13 @@
 #define UVMCE_INJECT_UME          _IO(UVMCE_MAGIC, 1 ) 
 #define UVMCE_INJECT_UME_AT_ADDR  _IOW(UVMCE_MAGIC, 2 , char *)
 
+struct err_inj_data {
+        unsigned long addr;
+        unsigned long length;
+        int faultit;
+        unsigned int flags;
+};                              
+
 
 #endif /* __UVMCE_H__ */
 

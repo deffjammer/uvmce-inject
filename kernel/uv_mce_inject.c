@@ -14,10 +14,12 @@
 #include <linux/kthread.h>
 #include <linux/sched.h>
 #include <linux/fs.h>
+#include <linux/mm.h>
 #include <linux/miscdevice.h>
 #include <linux/version.h>
 #include <linux/ioctl.h>                                                   
 #include <linux/io.h>                                                   
+#include <asm/pgtable.h>
 #include <asm/uv/uv.h>
 #include <asm/uv/uv_hub.h>
 #include <asm/uv/uv_mmrs.h>
@@ -62,7 +64,55 @@ static struct miscdevice uvmce_miscdev = {
 	&uvmce_fops,
 };
 
+int uvmce_inject_ume_at_addr(unsigned long start, unsigned long length)
+{
 
+
+        //ulong bits;
+ 	//u64 type;
+        //int bitcount;
+        ulong mask;
+        int ret = 0;
+        pgd_t *pgd;
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,7)
+        pud_t *pud;
+#endif  /* NEW_2_6_11 */
+        pmd_t *pmd;
+        pte_t *pte;
+        unsigned long physaddr;
+	
+	//pgd ->L3 pud->L2 pmd-> L1 pte
+
+        pgd = pgd_offset(current->mm, addr);
+        if(!pgd_present(*pgd)) {
+                printk("ERR_INJ: pgd not found for va %lx\n", addr);
+                return -EINVAL;
+        }
+
+        pmd = pmd_offset(pgd, addr);
+
+        if (!pmd_present(*pmd)) {
+                printk("ERR_INJ: pmd not found for va %lx\n", addr);
+                return -EINVAL;
+        }
+
+        pte = pte_offset_kernel(pmd, addr);
+        if (!pte_present(*pte)) {
+                printk("ERR_INJ: pte not found for va %lx\n", addr);
+                return -EINVAL;
+        }
+        physaddr = page_address(pte_page(*pte)) + (addr & (PAGE_SIZE-1));
+        printk("ERR_INJ:  addr = %lx, paddr = 0x%016lx *pte = %lx\n",
+                       addr,physaddr,  *(u64 *)pte);
+
+	printk ("Physical \t%#018lx \n",virt_to_phys(physaddr)); 
+//printk("ERR_INJ: type = %d, addr = %lx, bits = %lx, paddr = 0x%016lx *pte = %lx\n",
+         //               type, addr, bits, (u64) ia64_tpa(physaddr),
+          //              *(u64 *)pte);
+
+	return ret;
+
+} 
 int uvmce_inject_ume(void)
 {
         unsigned long flags;
@@ -101,38 +151,25 @@ static int uvmce_ioctl(struct inode *i, struct file *f, unsigned int cmd, unsign
 static long uvmce_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 #endif
 {
- 
-    switch (cmd)
-    {
-        case UVMCE_INJECT_UME:
-	    printk("UVMCE_INJECT_UME\n");
-	    uvmce_inject_ume();
-            break;
-#if 0
-        case QUERY_GET_VARIABLES:
-            q.status = status;
-            q.dignity = dignity;
-            q.ego = ego;
-            if (copy_to_user((query_arg_t *)arg, &q, sizeof(query_arg_t)))
-            {
-                return -EACCES;
-            }
-            break;
-        case QUERY_SET_VARIABLES:
-            if (copy_from_user(&q, (query_arg_t *)arg, sizeof(query_arg_t)))
-            {
-                return -EACCES;
-            }
-            status = q.status;
-            dignity = q.dignity;
-            ego = q.ego;
-            break;
-#endif
-        default:
-            return -EINVAL;
-    }
- 
-    return 0;
+        struct err_inj_data eid;
+	int ret = -1; 
+
+	switch (cmd)
+	{
+		case UVMCE_INJECT_UME:
+		    printk("UVMCE_INJECT_UME\n");
+		    uvmce_inject_ume();
+		    break;
+		case UVMCE_INJECT_UME_AT_ADDR:
+		    printk("UVMCE_INJECT_UME_AT_ADDR\n");
+		    ret = copy_from_user(&eid, (unsigned long *)arg, sizeof(struct err_inj_data));
+		    uvmce_inject_ume_at_addr(eid.addr, eid.length);
+		    break;
+		default:
+		    return -EINVAL;
+	}
+	 
+	    return ret;
 }
 
 
