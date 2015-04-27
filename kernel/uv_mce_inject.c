@@ -20,6 +20,7 @@
 #include <linux/ioctl.h>                                                   
 #include <linux/io.h>                                                   
 #include <asm/pgtable.h>
+#include <asm/delay.h>
 #include <asm/uv/uv.h>
 #include <asm/uv/uv_hub.h>
 #include <asm/uv/uv_mmrs.h>
@@ -45,8 +46,6 @@ static long uvmce_ioctl(struct file *, unsigned int , unsigned long );
 
 static struct file_operations uvmce_fops = {
     .owner = THIS_MODULE,
-//    .open = my_open,
-//    .release = my_close,
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35))
     .ioctl = uvmce_ioctl
 #else
@@ -64,19 +63,17 @@ static struct miscdevice uvmce_miscdev = {
 	&uvmce_fops,
 };
 
-int uvmce_inject_ume_at_addr(unsigned long start, unsigned long length)
+int uvmce_inject_ume_at_addr(unsigned long addr, unsigned long length)
 {
 
-
+#if 0
         //ulong bits;
  	//u64 type;
         //int bitcount;
         ulong mask;
         int ret = 0;
         pgd_t *pgd;
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,7)
         pud_t *pud;
-#endif  /* NEW_2_6_11 */
         pmd_t *pmd;
         pte_t *pte;
         unsigned long physaddr;
@@ -111,17 +108,24 @@ int uvmce_inject_ume_at_addr(unsigned long start, unsigned long length)
           //              *(u64 *)pte);
 
 	return ret;
-
+#endif
+	return 0;
 } 
+#if 1
 int uvmce_inject_ume(void)
 {
+  	int pnode, nid, bid=0;
         unsigned long flags;
 	unsigned long *poison_memory;
 	unsigned long pm;
+ 	unsigned long read_m;
 	//unsigned long bus;
         //int pnode = uv_blade_to_pnode(gru->gs_blade_id);
-	poison_memory = kmalloc(4096, GFP_USER);
-	printk ("Virt Alcd \t%#lx \n", poison_memory); 
+
+	pnode = uv_blade_to_pnode(bid);
+
+	poison_memory = kmalloc(0x10, GFP_KERNEL);
+	printk ("Virt Alcd \t%#lx \n", (unsigned long)poison_memory); 
 	pm = virt_to_phys(poison_memory);
 	printk ("Physical \t%#018lx \n",pm); 
 	//pm = pm >> PAGE_SHIFT;
@@ -130,21 +134,72 @@ int uvmce_inject_ume(void)
 	pm |= (1UL <<63);
 	printk ("Poison PB  \t%#018lx \n",pm ); 
 
-	//Same thing
-	//bus = virt_to_bus(poison_memory);
-	//printk ("Bus addr %#018lx \n", bus);
         spin_lock_irqsave(&uvmce_lock, flags);
-        uv_write_global_mmr64(0 /*pnode*/, UV_MMR_SCRATCH_1, pm);
-        uv_write_global_mmr64(0 /*pnode*/, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
+       	read_m = uv_read_local_mmr(UV_MMR_SCRATCH_1);
+	printk ("READ1 MMR  \t%#018lx \n",read_m ); 
+
+ 	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH_1, pm);
+
+       	read_m = uv_read_local_mmr(UV_MMR_SCRATCH_1);
+	printk ("READ2 MMR  \t%#018lx \n",read_m ); 
+
+        uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
 
         spin_unlock_irqrestore(&uvmce_lock, flags);
-	memset(&poison_memory, 0, sizeof(unsigned long));
-	kfree(poison_memory);
+
+	read_m = uv_read_local_mmr(UV_MMR_SCRATCH_1);
+	printk ("READ3 MMR  \t%#018lx \n",read_m ); 
+
+
+	//mb();
+//	memset(poison_memory, 1, 0x10);
+	//mb();
+	//kfree(poison_memory);
+
 	return 0;
 
 }
+#endif
+#if 0
+int uvmce_inject_ume(void)
+{
+
+  	int pnode, nid, i, bid=1;
+//	int order = get_order(sizeof(struct_page));
+	unsigned long *virt_addr, phys_addr;
+	struct page *page;
+ 	unsigned long read_m;
+
+   	pnode = uv_blade_to_pnode(bid);
+        nid = uv_blade_to_memory_nid(bid);/* -1 if no memory on blade */
+        page = alloc_pages_node(nid, GFP_KERNEL,0);
+	virt_addr = page_address(page);
+	printk ("Virt Alcd \t%#lx \n", virt_addr); 
+	phys_addr = virt_to_phys(virt_addr);
+	printk ("Physical \t%#018lx \n",phys_addr); 
+
+//	memset(page, 0, sizeof(struct page));
+
+	phys_addr |= (1UL <<63);
+	read_m = uv_read_local_mmr(UV_MMR_SCRATCH_1);
+	printk ("READ1 MMR  \t%#018lx \n",read_m ); 
+
+	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH_1, phys_addr);
+        read_m = uv_read_local_mmr(UV_MMR_SCRATCH_1);
+	printk ("READ2 MMR  \t%#018lx \n",read_m ); 
+
+	uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
+
+	read_m = uv_read_local_mmr(UV_MMR_SCRATCH_1);
+	printk ("READ3 MMR  \t%#018lx \n",read_m ); 
 
 
+	//free_pages(page, 0);
+
+	return 0;
+
+}
+#endif
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35))
 static int uvmce_ioctl(struct inode *i, struct file *f, unsigned int cmd, unsigned long arg)
 #else

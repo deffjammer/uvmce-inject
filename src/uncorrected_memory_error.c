@@ -35,18 +35,23 @@ int main (int argc, char** argv) {
 
         eid.faultit = 0;
         eid.length = 3;
-        eid.offset = (unsigned long)p;
+        eid.addr = addr;
 
 	if ((fd = open(UVMCE_DEVICE, O_RDWR)) < 0) {                 
 		printf("Failed to open: %s\n", UVMCE_DEVICE);  
 	  	exit (1);                                     
 	}                                               
 	
+	if ((ret = ioctl(fd, UVMCE_INJECT_UME)) < 0){        
+	    	printf("Failed to INJECT_UME\n");
+	    	exit(1);                                      
+	}
+#if 0
 	if ((ret = ioctl(fd, UVMCE_INJECT_UME_AT_ADDR, &eid )) < 0){        
 	    	printf("Failed to INJECT_UME\n");
 	    	exit(1);                                      
 	}                                               
-                                              
+#endif                                           
 	close(fd);                                      
 	return 0;                                       
 }
