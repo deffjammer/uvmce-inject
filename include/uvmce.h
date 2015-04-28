@@ -10,7 +10,8 @@
 
 #define UVMCE_MAGIC 's'                                                   
  
-#define UVMCE_INJECT_UME          _IO(UVMCE_MAGIC, 1 ) 
+//#define UVMCE_INJECT_UME          _IO(UVMCE_MAGIC, 1 ) 
+#define UVMCE_INJECT_UME          _IOR(UVMCE_MAGIC, 1 , char* ) 
 #define UVMCE_INJECT_UME_AT_ADDR  _IOW(UVMCE_MAGIC, 2 , char *)
 
 struct err_inj_data {

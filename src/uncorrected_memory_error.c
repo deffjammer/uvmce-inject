@@ -42,10 +42,12 @@ int main (int argc, char** argv) {
 	  	exit (1);                                     
 	}                                               
 	
-	if ((ret = ioctl(fd, UVMCE_INJECT_UME)) < 0){        
+	if ((ret = ioctl(fd, UVMCE_INJECT_UME, &eid)) < 0){        
 	    	printf("Failed to INJECT_UME\n");
 	    	exit(1);                                      
 	}
+	printf("return eid.addr 0x%lx\n", eid.addr);
+
 #if 0
 	if ((ret = ioctl(fd, UVMCE_INJECT_UME_AT_ADDR, &eid )) < 0){        
 	    	printf("Failed to INJECT_UME\n");

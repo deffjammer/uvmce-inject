@@ -111,10 +111,10 @@ int uvmce_inject_ume_at_addr(unsigned long addr, unsigned long length)
 #endif
 	return 0;
 } 
-#if 1
+#if 0
 int uvmce_inject_ume(void)
 {
-  	int pnode, nid, bid=0;
+  	int pnode, nid, bid=0, node=0;
         unsigned long flags;
 	unsigned long *poison_memory;
 	unsigned long pm;
@@ -124,79 +124,98 @@ int uvmce_inject_ume(void)
 
 	pnode = uv_blade_to_pnode(bid);
 
-	poison_memory = kmalloc(0x10, GFP_KERNEL);
+	poison_memory = __kmalloc_node(0x10, GFP_KERNEL, node);
 	printk ("Virt Alcd \t%#lx \n", (unsigned long)poison_memory); 
 	pm = virt_to_phys(poison_memory);
 	printk ("Physical \t%#018lx \n",pm); 
 	//pm = pm >> PAGE_SHIFT;
 	//printk ("Phys shift \t%#018lx \n",pm); 
 
+	memset(poison_memory, 0, 0x10);
 	pm |= (1UL <<63);
 	printk ("Poison PB  \t%#018lx \n",pm ); 
 
         spin_lock_irqsave(&uvmce_lock, flags);
-       	read_m = uv_read_local_mmr(UV_MMR_SCRATCH_1);
+       	read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
 	printk ("READ1 MMR  \t%#018lx \n",read_m ); 
 
  	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH_1, pm);
-
-       	read_m = uv_read_local_mmr(UV_MMR_SCRATCH_1);
+       	read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
 	printk ("READ2 MMR  \t%#018lx \n",read_m ); 
 
         uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
 
         spin_unlock_irqrestore(&uvmce_lock, flags);
 
-	read_m = uv_read_local_mmr(UV_MMR_SCRATCH_1);
+       	read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
 	printk ("READ3 MMR  \t%#018lx \n",read_m ); 
 
 
-	//mb();
-//	memset(poison_memory, 1, 0x10);
-	//mb();
-	//kfree(poison_memory);
+	mb();
+	memset(poison_memory, 1, 0x10);
+	mb();
+	kfree(poison_memory);
 
 	return 0;
 
 }
 #endif
-#if 0
-int uvmce_inject_ume(void)
+struct poison_addr_t {
+	struct page *s_page;
+};
+struct poison_addr_t *ps_addr[1]; 
+#if 1
+unsigned long uvmce_inject_ume(void)
 {
 
-  	int pnode, nid, i, bid=1;
+  	int pnode, nid, bid=1;
 //	int order = get_order(sizeof(struct_page));
-	unsigned long *virt_addr, phys_addr;
+	unsigned long *virt_addr, phys_addr, poison_addr;
 	struct page *page;
  	unsigned long read_m;
+	unsigned long *addr_array[1];
+	unsigned long ret_addr;
 
    	pnode = uv_blade_to_pnode(bid);
         nid = uv_blade_to_memory_nid(bid);/* -1 if no memory on blade */
         page = alloc_pages_node(nid, GFP_KERNEL,0);
-	virt_addr = page_address(page);
-	printk ("Virt Alcd \t%#lx \n", virt_addr); 
-	phys_addr = virt_to_phys(virt_addr);
+	printk ("Alcd page \t0x%p \n", page); 
+	//virt_addr = page_address(page);
+	ps_addr[0] = page_address(page);
+	printk ("Virt Alcd \t%#lx \n", ps_addr[0]); 
+	ps_addr[0]->s_page = page;
+	printk ("Stored page \t%#lx \n", ps_addr[0]->s_page); 
+	memset(ps_addr[0], 0, (sizeof(struct poison_addr_t)));
+
+	phys_addr = virt_to_phys(ps_addr[0]);
 	printk ("Physical \t%#018lx \n",phys_addr); 
 
-//	memset(page, 0, sizeof(struct page));
+	mb();
+	//phys_addr |= (1UL <<63);
+	poison_addr = phys_addr | (1UL <<63);
+	printk ("Poison PB  \t%#018lx \n",poison_addr ); 
 
-	phys_addr |= (1UL <<63);
-	read_m = uv_read_local_mmr(UV_MMR_SCRATCH_1);
+	read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
 	printk ("READ1 MMR  \t%#018lx \n",read_m ); 
 
-	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH_1, phys_addr);
-        read_m = uv_read_local_mmr(UV_MMR_SCRATCH_1);
+	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH_1, poison_addr);
+        read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
 	printk ("READ2 MMR  \t%#018lx \n",read_m ); 
-
+	mb();
 	uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
+	mb();
+	schedule();
+	printk ("base \t%#lx \n", ps_addr[0]); 
+	printk ("page \t%#lx \n", ps_addr[0]->s_page); 
+	printk ("phys_t_vir \t%#018lx \n",phys_to_virt(phys_addr)); 
+	ret_addr = phys_to_virt(phys_addr);
+	schedule();
+	udelay(1000);	
+	mb();
 
-	read_m = uv_read_local_mmr(UV_MMR_SCRATCH_1);
-	printk ("READ3 MMR  \t%#018lx \n",read_m ); 
+	free_pages((unsigned long)addr_array[0], 0);
 
-
-	//free_pages(page, 0);
-
-	return 0;
+	return ret_addr;
 
 }
 #endif
@@ -207,13 +226,14 @@ static long uvmce_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 #endif
 {
         struct err_inj_data eid;
-	int ret = -1; 
+	int ret = 0; 
 
 	switch (cmd)
 	{
 		case UVMCE_INJECT_UME:
 		    printk("UVMCE_INJECT_UME\n");
-		    uvmce_inject_ume();
+		    eid.addr = uvmce_inject_ume();
+		    copy_to_user((unsigned long *)arg, &eid, sizeof(struct err_inj_data));
 		    break;
 		case UVMCE_INJECT_UME_AT_ADDR:
 		    printk("UVMCE_INJECT_UME_AT_ADDR\n");
