@@ -163,14 +163,17 @@ struct poison_addr_t *ps_addr[1];
 unsigned long uvmce_inject_ume(void)
 {
 
-  	int pnode, nid, bid=0, node=0;
-//	int order = get_order(sizeof(struct_page));
+  	int pnode, bid=0,node=0;  
+	int cpu = 0;
 	unsigned long *virt_addr, phys_addr, poisoned_b_addr;
 	struct page *page;
  	unsigned long read_m;
 	struct poison_addr_t *poison_addr;
 	unsigned long ret_addr;
 	size_t dsize;
+
+ 	pnode = uv_blade_to_pnode(uv_cpu_to_blade_id(cpu));
+	node = cpu_to_node(cpu);
 
  	dsize = (sizeof(struct poison_addr_t) * (sizeof(unsigned long)));
         poison_addr = kmalloc_node(dsize, GFP_KERNEL, node);
