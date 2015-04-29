@@ -43,14 +43,17 @@ static int uvmce_ioctl(struct inode *, struct file *, unsigned int , unsigned lo
 #else
 static long uvmce_ioctl(struct file *, unsigned int , unsigned long );
 #endif
+static int mce_mmap(struct file *, struct vm_area_struct *);
 
 static struct file_operations uvmce_fops = {
     .owner = THIS_MODULE,
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35))
-    .ioctl = uvmce_ioctl
+    .ioctl = uvmce_ioctl,
 #else
-    .unlocked_ioctl = uvmce_ioctl
+    .unlocked_ioctl = uvmce_ioctl,
 #endif
+    .mmap = mce_mmap,
+
 };
 
 
@@ -62,6 +65,46 @@ static struct miscdevice uvmce_miscdev = {
 	UVMCE_NAME,
 	&uvmce_fops,
 };
+
+
+/**
+ * uv_mmtimer_mmap - maps the clock's registers into userspace
+ * @file: file structure for the device
+ * @vma: VMA to map the registers into
+ *
+ * Calls remap_pfn_range() to map the clock's registers into
+ * the calling process' address space.
+ */
+static int mce_mmap(struct file *file, struct vm_area_struct *vma)
+{
+#if 0
+        unsigned long uv_mmtimer_addr;
+
+        if (vma->vm_end - vma->vm_start != PAGE_SIZE)
+                return -EINVAL;
+
+        if (vma->vm_flags & VM_WRITE)
+                return -EPERM;
+
+        if (PAGE_SIZE > (1 << 16))
+                return -ENOSYS;
+
+        vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+
+        uv_mmtimer_addr = UV_LOCAL_MMR_BASE | UVH_RTC;
+        uv_mmtimer_addr &= ~(PAGE_SIZE - 1);
+        uv_mmtimer_addr &= 0xfffffffffffffffUL;
+
+        if (remap_pfn_range(vma, vma->vm_start, uv_mmtimer_addr >> PAGE_SHIFT,
+                                        PAGE_SIZE, vma->vm_page_prot)) {
+                printk(KERN_ERR "remap_pfn_range failed in uv_mmtimer_mmap\n");
+                return -EAGAIN;
+        }
+#endif 
+        return 0;
+}
+
+
 
 int uvmce_inject_ume_at_addr(unsigned long addr, unsigned long length)
 {
@@ -111,110 +154,68 @@ int uvmce_inject_ume_at_addr(unsigned long addr, unsigned long length)
 #endif
 	return 0;
 } 
-#if 0
-int uvmce_inject_ume(void)
-{
-  	int pnode, nid, bid=0, node=0;
-        unsigned long flags;
-	unsigned long *poison_memory;
-	unsigned long pm;
- 	unsigned long read_m;
-	//unsigned long bus;
-        //int pnode = uv_blade_to_pnode(gru->gs_blade_id);
-
-	pnode = uv_blade_to_pnode(bid);
-
-	poison_memory = __kmalloc_node(0x10, GFP_KERNEL, node);
-	printk ("Virt Alcd \t%#lx \n", (unsigned long)poison_memory); 
-	pm = virt_to_phys(poison_memory);
-	printk ("Physical \t%#018lx \n",pm); 
-	//pm = pm >> PAGE_SHIFT;
-	//printk ("Phys shift \t%#018lx \n",pm); 
-
-	memset(poison_memory, 0, 0x10);
-	pm |= (1UL <<63);
-	printk ("Poison PB  \t%#018lx \n",pm ); 
-
-        spin_lock_irqsave(&uvmce_lock, flags);
-       	read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
-	printk ("READ1 MMR  \t%#018lx \n",read_m ); 
-
- 	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH_1, pm);
-       	read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
-	printk ("READ2 MMR  \t%#018lx \n",read_m ); 
-
-        uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
-
-        spin_unlock_irqrestore(&uvmce_lock, flags);
-
-       	read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
-	printk ("READ3 MMR  \t%#018lx \n",read_m ); 
-
-
-	mb();
-	memset(poison_memory, 1, 0x10);
-	mb();
-	kfree(poison_memory);
-
-	return 0;
-
-}
-#endif
 struct poison_addr_t {
-	struct page *s_page;
+	//struct page *s_page;
+	unsigned long vaddr;
 };
 struct poison_addr_t *ps_addr[1]; 
 #if 1
 unsigned long uvmce_inject_ume(void)
 {
 
-  	int pnode, nid, bid=1;
+  	int pnode, nid, bid=0, node=0;
 //	int order = get_order(sizeof(struct_page));
-	unsigned long *virt_addr, phys_addr, poison_addr;
+	unsigned long *virt_addr, phys_addr, poisoned_b_addr;
 	struct page *page;
  	unsigned long read_m;
-	unsigned long *addr_array[1];
+	struct poison_addr_t *poison_addr;
 	unsigned long ret_addr;
+	size_t dsize;
 
-   	pnode = uv_blade_to_pnode(bid);
-        nid = uv_blade_to_memory_nid(bid);/* -1 if no memory on blade */
-        page = alloc_pages_node(nid, GFP_KERNEL,0);
-	printk ("Alcd page \t0x%p \n", page); 
-	//virt_addr = page_address(page);
-	ps_addr[0] = page_address(page);
-	printk ("Virt Alcd \t%#lx \n", ps_addr[0]); 
-	ps_addr[0]->s_page = page;
-	printk ("Stored page \t%#lx \n", ps_addr[0]->s_page); 
-	memset(ps_addr[0], 0, (sizeof(struct poison_addr_t)));
+ 	dsize = (sizeof(struct poison_addr_t) * (sizeof(unsigned long)));
+        poison_addr = kmalloc_node(dsize, GFP_KERNEL, node);
 
-	phys_addr = virt_to_phys(ps_addr[0]);
+	printk ("Virt Alcd \t%#lx \n", poison_addr); 
+	memset(poison_addr, 0, dsize);
+	printk ("Std vaddr \t%#lx \n", poison_addr->vaddr); 
+	poison_addr->vaddr = 0x00000001;
+	printk ("Std vaddr \t%#lx \n", poison_addr->vaddr); 
+
+	phys_addr = virt_to_phys(poison_addr);
 	printk ("Physical \t%#018lx \n",phys_addr); 
 
-	mb();
-	//phys_addr |= (1UL <<63);
-	poison_addr = phys_addr | (1UL <<63);
-	printk ("Poison PB  \t%#018lx \n",poison_addr ); 
+	phys_addr |= (1UL <<63);
+	poisoned_b_addr = phys_addr | (1UL <<63);
+	printk ("Poison PB  \t%#018lx \n",poisoned_b_addr ); 
 
 	read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
 	printk ("READ1 MMR  \t%#018lx \n",read_m ); 
 
-	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH_1, poison_addr);
+	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH_1, poisoned_b_addr);
         read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
 	printk ("READ2 MMR  \t%#018lx \n",read_m ); 
-	mb();
 	uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
+#if 0
 	mb();
-	schedule();
-	printk ("base \t%#lx \n", ps_addr[0]); 
-	printk ("page \t%#lx \n", ps_addr[0]->s_page); 
-	printk ("phys_t_vir \t%#018lx \n",phys_to_virt(phys_addr)); 
-	ret_addr = phys_to_virt(phys_addr);
-	schedule();
-	udelay(1000);	
+	poison_addr->vaddr = 0x00000001;
+	printk ("Std vaddr \t%#lx \n", poison_addr->vaddr); 
 	mb();
-
-	free_pages((unsigned long)addr_array[0], 0);
-
+	poison_addr->vaddr = 0x00000002;
+	printk ("Std vaddr \t%#lx \n", poison_addr->vaddr); 
+	mb();
+	poison_addr->vaddr = 0x00000003;
+	printk ("Std vaddr \t%#lx \n", poison_addr->vaddr); 
+	mb();
+	poison_addr->vaddr = 0x00000004;
+	printk ("Std vaddr \t%#lx \n", poison_addr->vaddr); 
+#endif 
+	mb();
+	poison_addr->vaddr = 0x00000004;
+	printk ("Std vaddr \t%#lx \n", poison_addr->vaddr); 
+	memset(poison_addr, 0, dsize);
+	mb();
+	
+	kfree(poison_addr);
 	return ret_addr;
 
 }
