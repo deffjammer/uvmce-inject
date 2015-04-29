@@ -154,37 +154,36 @@ int uvmce_inject_ume_at_addr(unsigned long addr, unsigned long length)
 #endif
 	return 0;
 } 
-struct poison_addr_t {
+struct poison_st_t {
 	//struct page *s_page;
 	unsigned long vaddr;
 };
-struct poison_addr_t *ps_addr[1]; 
+struct poison_st_t *ps_addr[1]; 
 #if 1
 unsigned long uvmce_inject_ume(void)
 {
 
-  	int pnode, bid=0,node=0;  
+  	int pnode, node=0;  
 	int cpu = 0;
-	unsigned long *virt_addr, phys_addr, poisoned_b_addr;
-	struct page *page;
+	unsigned long phys_addr, poisoned_b_addr;
  	unsigned long read_m;
-	struct poison_addr_t *poison_addr;
+	struct poison_st_t *poison_st;
 	unsigned long ret_addr;
 	size_t dsize;
 
  	pnode = uv_blade_to_pnode(uv_cpu_to_blade_id(cpu));
 	node = cpu_to_node(cpu);
 
- 	dsize = (sizeof(struct poison_addr_t) * (sizeof(unsigned long)));
-        poison_addr = kmalloc_node(dsize, GFP_KERNEL, node);
+ 	dsize = (sizeof(struct poison_st_t) * (sizeof(unsigned long)));
+        poison_st = kmalloc_node(dsize, GFP_KERNEL, node);
 
-	printk ("Virt Alcd \t%#lx \n", poison_addr); 
-	memset(poison_addr, 0, dsize);
-	printk ("Std vaddr \t%#lx \n", poison_addr->vaddr); 
-	poison_addr->vaddr = 0x00000001;
-	printk ("Std vaddr \t%#lx \n", poison_addr->vaddr); 
+	printk ("Virt Alcd \t%#lx \n", (unsigned long)poison_st); 
+	memset(poison_st, 0, dsize);
+	poison_st->vaddr = 0x00000001;
+	printk ("Std vaddr \t%#lx \n", poison_st->vaddr); 
 
-	phys_addr = virt_to_phys(poison_addr);
+	phys_addr = virt_to_phys(poison_st);
+	ret_addr = phys_addr;
 	printk ("Physical \t%#018lx \n",phys_addr); 
 
 	phys_addr |= (1UL <<63);
@@ -198,27 +197,14 @@ unsigned long uvmce_inject_ume(void)
         read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
 	printk ("READ2 MMR  \t%#018lx \n",read_m ); 
 	uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
-#if 0
+
 	mb();
-	poison_addr->vaddr = 0x00000001;
-	printk ("Std vaddr \t%#lx \n", poison_addr->vaddr); 
-	mb();
-	poison_addr->vaddr = 0x00000002;
-	printk ("Std vaddr \t%#lx \n", poison_addr->vaddr); 
-	mb();
-	poison_addr->vaddr = 0x00000003;
-	printk ("Std vaddr \t%#lx \n", poison_addr->vaddr); 
-	mb();
-	poison_addr->vaddr = 0x00000004;
-	printk ("Std vaddr \t%#lx \n", poison_addr->vaddr); 
-#endif 
-	mb();
-	poison_addr->vaddr = 0x00000004;
-	printk ("Std vaddr \t%#lx \n", poison_addr->vaddr); 
-	memset(poison_addr, 0, dsize);
+	poison_st->vaddr = 0x00000004;
+	printk ("Std vaddr \t%#lx \n", poison_st->vaddr); 
+	memset(poison_st, 0, dsize);
 	mb();
 	
-	kfree(poison_addr);
+	kfree(poison_st);
 	return ret_addr;
 
 }
@@ -237,7 +223,7 @@ static long uvmce_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 		case UVMCE_INJECT_UME:
 		    printk("UVMCE_INJECT_UME\n");
 		    eid.addr = uvmce_inject_ume();
-		    copy_to_user((unsigned long *)arg, &eid, sizeof(struct err_inj_data));
+		    ret = copy_to_user((unsigned long *)arg, &eid, sizeof(struct err_inj_data));
 		    break;
 		case UVMCE_INJECT_UME_AT_ADDR:
 		    printk("UVMCE_INJECT_UME_AT_ADDR\n");
