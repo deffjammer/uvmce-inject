@@ -163,8 +163,8 @@ struct poison_st_t *ps_addr[1];
 unsigned long uvmce_inject_ume(void)
 {
 
-  	int pnode, node=0;  
-	int cpu = 0;
+  	int pnode, node;  
+	int cpu = 36;
 	unsigned long phys_addr, poisoned_b_addr;
  	unsigned long read_m;
 	struct poison_st_t *poison_st;
@@ -173,14 +173,14 @@ unsigned long uvmce_inject_ume(void)
 
  	pnode = uv_blade_to_pnode(uv_cpu_to_blade_id(cpu));
 	node = cpu_to_node(cpu);
-
+	printk("cpu %d, pnode %d, node %d\n", cpu,pnode, node);
  	dsize = (sizeof(struct poison_st_t) * (sizeof(unsigned long)));
         poison_st = kmalloc_node(dsize, GFP_KERNEL, node);
 
 	printk ("Virt Alcd \t%#lx \n", (unsigned long)poison_st); 
-	memset(poison_st, 0, dsize);
+	//memset(poison_st, 0, dsize);
 	poison_st->vaddr = 0x00000001;
-	printk ("Std vaddr \t%#lx \n", poison_st->vaddr); 
+	//printk ("Std vaddr \t%#lx \n", poison_st->vaddr); 
 
 	phys_addr = virt_to_phys(poison_st);
 	ret_addr = phys_addr;
