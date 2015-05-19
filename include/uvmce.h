@@ -17,6 +17,7 @@
 struct err_inj_data {
         unsigned long addr;
         unsigned long length;
+        int cpu;
         int faultit;
         unsigned int flags;
 };                              

@@ -113,16 +113,18 @@ static bool low_pfn(unsigned long pfn)
         //return pfn < max_low_pfn;
 }
 
-int uvmce_inject_ume_at_addr(unsigned long address, unsigned long length)
+int uvmce_inject_ume_at_addr(unsigned long address, unsigned long length, int cpu)
 {
 
         int ret = 0;
 	unsigned long phys_addr, poisoned_b_addr;
  	unsigned long read_m;
   	int pnode, node;  
-	int cpu = 10;
 
 	//pgd ->L3 pud->L2 pmd-> L1 pte
+	pnode = uv_blade_to_pnode(uv_cpu_to_blade_id(cpu));
+	node = cpu_to_node(cpu);
+	printk("cpu %d, pnode %d, node %d\n", cpu,pnode, node);
 
 	printk("user addr %lx\n", address);
 
@@ -244,7 +246,7 @@ static long uvmce_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 		case UVMCE_INJECT_UME_AT_ADDR:
 		    printk("UVMCE_INJECT_UME_AT_ADDR\n");
 		    ret = copy_from_user(&eid, (unsigned long *)arg, sizeof(struct err_inj_data));
-		    uvmce_inject_ume_at_addr(eid.addr, eid.length);
+		    uvmce_inject_ume_at_addr(eid.addr, eid.length, eid.cpu);
 		    break;
 		default:
 		    return -EINVAL;
