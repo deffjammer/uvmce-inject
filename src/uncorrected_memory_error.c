@@ -23,6 +23,7 @@ int main (int argc, char** argv) {
 	int fd, ret, c, ume_test = 1;
 	static char optstr[] = "uc:";
 	unsigned long addr;
+	int i;
 
         opterr = 1;
         while ((c = getopt(argc, argv, optstr)) != EOF)
@@ -44,13 +45,17 @@ int main (int argc, char** argv) {
         eid.faultit = 0;
         eid.length = 3;
         //eid.addr = addr;
-   	eid.addr = (ulong)buf;
-
+        for (i = 0; i < (PAGE_SIZE > 8); i++) {
+        	if (buf[i]) {
+                        printf("buf[%d] = %x\n", i, buf[i]);
+                }
+	}
 	if ((fd = open(UVMCE_DEVICE, O_RDWR)) < 0) {                 
 		printf("Failed to open: %s\n", UVMCE_DEVICE);  
 	  	exit (1);                                     
 	}                                               
 	
+   	eid.addr = (ulong)buf;
 #if 0
 	if ((ret = ioctl(fd, UVMCE_INJECT_UME, &eid)) < 0){        
 	    	printf("Failed to INJECT_UME\n");
