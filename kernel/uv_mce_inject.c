@@ -16,11 +16,13 @@
 #include <linux/fs.h>
 #include <linux/mm.h>
 #include <linux/miscdevice.h>
+#include <linux/bootmem.h>              /* max_low_pfn                  */
 #include <linux/version.h>
 #include <linux/ioctl.h>                                                   
 #include <linux/io.h>                                                   
 #include <asm/pgtable.h>
 #include <asm/delay.h>
+#include <asm/page_types.h>
 #include <asm/uv/uv.h>
 #include <asm/uv/uv_hub.h>
 #include <asm/uv/uv_mmrs.h>
@@ -105,54 +107,68 @@ static int mce_mmap(struct file *file, struct vm_area_struct *vma)
 }
 
 
+static bool low_pfn(unsigned long pfn)
+{
+        return 1;
+        //return pfn < max_low_pfn;
+}
 
-int uvmce_inject_ume_at_addr(unsigned long addr, unsigned long length)
+int uvmce_inject_ume_at_addr(unsigned long address, unsigned long length)
 {
 
-#if 0
-        //ulong bits;
- 	//u64 type;
-        //int bitcount;
-        ulong mask;
         int ret = 0;
-        pgd_t *pgd;
-        pud_t *pud;
-        pmd_t *pmd;
-        pte_t *pte;
-        unsigned long physaddr;
-	
+	unsigned long phys_addr, poisoned_b_addr;
+ 	unsigned long read_m;
+  	int pnode, node;  
+	int cpu = 10;
+
 	//pgd ->L3 pud->L2 pmd-> L1 pte
 
-        pgd = pgd_offset(current->mm, addr);
-        if(!pgd_present(*pgd)) {
-                printk("ERR_INJ: pgd not found for va %lx\n", addr);
-                return -EINVAL;
-        }
+	printk("user addr %lx\n", address);
 
-        pmd = pmd_offset(pgd, addr);
 
-        if (!pmd_present(*pmd)) {
-                printk("ERR_INJ: pmd not found for va %lx\n", addr);
-                return -EINVAL;
-        }
+    	pgd_t *base = __va(read_cr3());
+        pgd_t *pgd = &base[pgd_index(address)];
+        pmd_t *pmd;
+        pte_t *pte;
 
-        pte = pte_offset_kernel(pmd, addr);
-        if (!pte_present(*pte)) {
-                printk("ERR_INJ: pte not found for va %lx\n", addr);
-                return -EINVAL;
-        }
-        physaddr = page_address(pte_page(*pte)) + (addr & (PAGE_SIZE-1));
-        printk("ERR_INJ:  addr = %lx, paddr = 0x%016lx *pte = %lx\n",
-                       addr,physaddr,  *(u64 *)pte);
+        pmd = pmd_offset(pud_offset(pgd, address), address);
+        printk(KERN_CONT "*pde = %0*Lx\n ", sizeof(*pmd) * 2, (u64)pmd_val(*pmd));
 
-	printk ("Physical \t%#018lx \n",virt_to_phys(physaddr)); 
-//printk("ERR_INJ: type = %d, addr = %lx, bits = %lx, paddr = 0x%016lx *pte = %lx\n",
-         //               type, addr, bits, (u64) ia64_tpa(physaddr),
-          //              *(u64 *)pte);
+        /*
+         * We must not directly access the pte in the highpte
+         * case if the page table is located in highmem.
+         * And let's rather not kmap-atomic the pte, just in case
+         * it's allocated already:
+         */
+        if (!low_pfn(pmd_pfn(*pmd)) || !pmd_present(*pmd) || pmd_large(*pmd))
+                goto out;
 
-	return ret;
-#endif
-	return 0;
+        pte = pte_offset_kernel(pmd, address);
+        printk("*pte = %0*Lx\n ", sizeof(*pte) * 2, (u64)pte_val(*pte));
+	printk("Proc: %s pte:%#018lx pmd:%#018lx \n", current->comm,
+				(PHYSICAL_PAGE_MASK & (long long)pte_val(*pte)), 
+				(PHYSICAL_PAGE_MASK & (long long)pmd_val(*pmd)));
+
+
+	phys_addr = PHYSICAL_PAGE_MASK & (long long)pte_val(*pte);
+	printk ("Physical \t%#018lx \n",phys_addr); 
+
+	phys_addr |= (1UL <<63);
+	poisoned_b_addr = phys_addr | (1UL <<63);
+	printk ("Poison PB  \t%#018lx \n",poisoned_b_addr ); 
+
+	read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
+	printk ("READ1 MMR  \t%#018lx \n",read_m ); 
+
+	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH_1, poisoned_b_addr);
+        read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
+	printk ("READ2 MMR  \t%#018lx \n",read_m ); 
+	uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
+
+out:
+	
+	return pte;
 } 
 struct poison_st_t {
 	//struct page *s_page;
@@ -164,7 +180,7 @@ unsigned long uvmce_inject_ume(void)
 {
 
   	int pnode, node;  
-	int cpu = 36;
+	int cpu = 10;
 	unsigned long phys_addr, poisoned_b_addr;
  	unsigned long read_m;
 	struct poison_st_t *poison_st;
