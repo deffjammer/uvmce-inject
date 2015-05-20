@@ -132,7 +132,7 @@ int uvmce_inject_ume_at_addr(unsigned long address, unsigned long length, int cp
 	printk("user addr %lx\n", address);
 
         pmd = pmd_offset(pud_offset(pgd, address), address);
-        printk(KERN_CONT "*pde = %0*Lx\n ", sizeof(*pmd) * 2, (u64)pmd_val(*pmd));
+        printk(KERN_CONT "*pde = %0*Lx\n ", (int)(sizeof(*pmd) * 2), (u64)pmd_val(*pmd));
         printk(KERN_CONT "*pde = %#018llx\n ", (unsigned long long)pmd_val(*pmd));
 
         /*
@@ -145,7 +145,7 @@ int uvmce_inject_ume_at_addr(unsigned long address, unsigned long length, int cp
                 goto out;
 
         pte = pte_offset_kernel(pmd, address);
-        printk("*pte = %0*Lx\n ", sizeof(*pte) * 2, (u64)pte_val(*pte));
+        printk("*pte = %0*Lx\n ", (int)(sizeof(*pte) * 2), (u64)pte_val(*pte));
 	printk("Proc: %s pte:%#018llx pmd:%#018llx \n", current->comm,
 				(PHYSICAL_PAGE_MASK & (long long)pte_val(*pte)), 
 				(PHYSICAL_PAGE_MASK & (long long)pmd_val(*pmd)));
