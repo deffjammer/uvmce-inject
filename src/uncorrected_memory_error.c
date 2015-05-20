@@ -63,13 +63,13 @@ int cpu_process_affinity(pid_t pid, int cpu)
 
  
 int main (int argc, char** argv) {                                     
-	int fd, ret, c, ume_test = 1;
+	int fd, ret, c;
 	static char optstr[] = "kuc:";
 	unsigned long addr;
 	int i;
         int ioctlcmd = UVMCE_INJECT_UME_AT_ADDR;
 
-	eid.cpu = 1;
+	eid.cpu = 5;
 
         while ((c = getopt(argc, argv, optstr)) != EOF)
                 switch (c) {
@@ -89,6 +89,7 @@ int main (int argc, char** argv) {
 	}
 
 	cpu_process_affinity(getpid(), eid.cpu);
+	sleep(2);
 
   	buf[0] = 0;
         eid.faultit = 0;
@@ -100,7 +101,6 @@ int main (int argc, char** argv) {
                         printf("buf[%d] = %x\n", i, buf[i]);
                 }
 	}
-	sleep(2);
 
 	if ((fd = open(UVMCE_DEVICE, O_RDWR)) < 0) {                 
 		printf("Failed to open: %s\n", UVMCE_DEVICE);  
@@ -121,8 +121,6 @@ int main (int argc, char** argv) {
                         printf("buf[%d] = %x\n", i, buf[i]);
                 }
          }
-
-        sleep(2);
 
 
 	close(fd);                                      
