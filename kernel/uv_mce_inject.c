@@ -115,11 +115,14 @@ static bool low_pfn(unsigned long pfn)
 
 int uvmce_inject_ume_at_addr(unsigned long address, unsigned long length, int cpu)
 {
-
-        int ret = 0;
+	int ret = 0;
 	unsigned long phys_addr, poisoned_b_addr;
  	unsigned long read_m;
   	int pnode, node;  
+	pgd_t *base = __va(read_cr3());
+        pgd_t *pgd = &base[pgd_index(address)];
+        pmd_t *pmd;
+        pte_t *pte;
 
 	//pgd ->L3 pud->L2 pmd-> L1 pte
 	pnode = uv_blade_to_pnode(uv_cpu_to_blade_id(cpu));
@@ -128,14 +131,9 @@ int uvmce_inject_ume_at_addr(unsigned long address, unsigned long length, int cp
 
 	printk("user addr %lx\n", address);
 
-
-    	pgd_t *base = __va(read_cr3());
-        pgd_t *pgd = &base[pgd_index(address)];
-        pmd_t *pmd;
-        pte_t *pte;
-
         pmd = pmd_offset(pud_offset(pgd, address), address);
         printk(KERN_CONT "*pde = %0*Lx\n ", sizeof(*pmd) * 2, (u64)pmd_val(*pmd));
+        printk(KERN_CONT "*pde = %#018llx\n ", (unsigned long long)pmd_val(*pmd));
 
         /*
          * We must not directly access the pte in the highpte
@@ -148,7 +146,7 @@ int uvmce_inject_ume_at_addr(unsigned long address, unsigned long length, int cp
 
         pte = pte_offset_kernel(pmd, address);
         printk("*pte = %0*Lx\n ", sizeof(*pte) * 2, (u64)pte_val(*pte));
-	printk("Proc: %s pte:%#018lx pmd:%#018lx \n", current->comm,
+	printk("Proc: %s pte:%#018llx pmd:%#018llx \n", current->comm,
 				(PHYSICAL_PAGE_MASK & (long long)pte_val(*pte)), 
 				(PHYSICAL_PAGE_MASK & (long long)pmd_val(*pmd)));
 
@@ -170,7 +168,7 @@ int uvmce_inject_ume_at_addr(unsigned long address, unsigned long length, int cp
 
 out:
 	
-	return pte;
+	return ret;
 } 
 struct poison_st_t {
 	//struct page *s_page;

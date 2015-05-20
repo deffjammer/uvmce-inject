@@ -49,7 +49,7 @@ int cpu_process_affinity(pid_t pid, int cpu)
         CPU_ZERO_S(size, cpus);
         CPU_SET_S(cpu, ncpus, cpus);
 
-        printf("sysrt_process_affinity pid %d, cpu %d\n",pid,cpu);
+        printf("cpu_process_affinity pid %d, cpu %d\n",pid,cpu);
         if (sched_setaffinity(pid, size, cpus)) {
                 perror("sched_setaffinity");
                 CPU_FREE(cpus);
@@ -64,16 +64,20 @@ int cpu_process_affinity(pid_t pid, int cpu)
  
 int main (int argc, char** argv) {                                     
 	int fd, ret, c, ume_test = 1;
-	static char optstr[] = "uc:";
+	static char optstr[] = "kuc:";
 	unsigned long addr;
 	int i;
+        int ioctlcmd = UVMCE_INJECT_UME_AT_ADDR;
 
 	eid.cpu = 1;
-        opterr = 1;
+
         while ((c = getopt(argc, argv, optstr)) != EOF)
                 switch (c) {
+                case 'k':
+                	ioctlcmd = UVMCE_INJECT_UME;
+                	break;
                 case 'u':
-                	ume_test = 1;
+                	ioctlcmd = UVMCE_INJECT_UME_AT_ADDR;
                 	break;
                 case 'c':
                         eid.cpu = atoi(optarg);
@@ -86,45 +90,39 @@ int main (int argc, char** argv) {
 
 	cpu_process_affinity(getpid(), eid.cpu);
 
-
   	buf[0] = 0;
         eid.faultit = 0;
         eid.length = 3;
-
+   	eid.addr = (ulong)buf;
+	//falut in pages
         for (i = 0; i < (PAGE_SIZE > 8); i++) {
         	if (buf[i]) {
                         printf("buf[%d] = %x\n", i, buf[i]);
                 }
 	}
 	sleep(2);
+
 	if ((fd = open(UVMCE_DEVICE, O_RDWR)) < 0) {                 
 		printf("Failed to open: %s\n", UVMCE_DEVICE);  
 	  	exit (1);                                     
 	}                                               
 	
-   	eid.addr = (ulong)buf;
-#if 0
-	if ((ret = ioctl(fd, UVMCE_INJECT_UME, &eid)) < 0){        
-	    	printf("Failed to INJECT_UME\n");
-	    	exit(1);                                      
-	}
-#endif                                           
-	if ((ret = ioctl(fd, UVMCE_INJECT_UME_AT_ADDR, &eid )) < 0){        
+            
+	if ((ret = ioctl(fd, ioctlcmd, &eid )) < 0){        
 	    	printf("Failed to INJECT_UME\n");
 	    	exit(1);                                      
 	}                                               
 
 	printf("return eid.addr 0x%lx\n", eid.addr);
 
-
+	//Access pages again to trigger fault?
         for (i = 0; i < (PAGE_SIZE > 8); i++) {
         	if (buf[i]) {
                         printf("buf[%d] = %x\n", i, buf[i]);
                 }
-                /* buf[i] = 0; */
          }
 
-        sleep(3);
+        sleep(2);
 
 
 	close(fd);                                      
