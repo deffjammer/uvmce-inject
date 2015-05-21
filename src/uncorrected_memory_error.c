@@ -88,7 +88,7 @@ int main (int argc, char** argv) {
 			break;
 	}
 
-	cpu_process_affinity(getpid(), eid.cpu);
+	//cpu_process_affinity(getpid(), eid.cpu);
 	sleep(2);
 
   	buf[0] = 0;
