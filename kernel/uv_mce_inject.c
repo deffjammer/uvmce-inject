@@ -113,10 +113,9 @@ static bool low_pfn(unsigned long pfn)
         //return pfn < max_low_pfn;
 }
 
-int uvmce_inject_ume_at_addr(unsigned long address, unsigned long length, int cpu)
+unsigned long uvmce_inject_ume_at_addr(unsigned long address, unsigned long length, int cpu)
 {
-	int ret = 0;
-	unsigned long phys_addr, poisoned_b_addr;
+	unsigned long phys_addr=-1, poisoned_b_addr=-1;
  	unsigned long read_m;
   	int pnode, node;  
 	pgd_t *base = __va(read_cr3());
@@ -151,21 +150,20 @@ int uvmce_inject_ume_at_addr(unsigned long address, unsigned long length, int cp
 	phys_addr = PHYSICAL_PAGE_MASK & (long long)pte_val(*pte);
 	printk ("Physical \t%#018lx \n",phys_addr); 
 
-	phys_addr |= (1UL <<63);
 	poisoned_b_addr = phys_addr | (1UL <<63);
 	printk ("Poison PB  \t%#018lx \n",poisoned_b_addr ); 
 
 	read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
 	printk ("READ1 MMR  \t%#018lx \n",read_m ); 
 
-	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH_1, poisoned_b_addr);
+	//uv_write_global_mmr64(pnode, UV_MMR_SCRATCH_1, poisoned_b_addr);
         read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
 	printk ("READ2 MMR  \t%#018lx \n",read_m ); 
-	uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
+	//uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
 
 out:
 	
-	return ret;
+	return poisoned_b_addr;
 } 
 struct poison_st_t {
 	//struct page *s_page;
@@ -241,7 +239,8 @@ static long uvmce_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
 		case UVMCE_INJECT_UME_AT_ADDR:
 		    printk("UVMCE_INJECT_UME_AT_ADDR\n");
 		    ret = copy_from_user(&eid, (unsigned long *)arg, sizeof(struct err_inj_data));
-		    uvmce_inject_ume_at_addr(eid.addr, eid.length, eid.cpu);
+		    eid.addr = uvmce_inject_ume_at_addr(eid.addr, eid.length, eid.cpu);
+		    ret = copy_to_user((unsigned long *)arg, &eid, sizeof(struct err_inj_data));
 		    break;
 		default:
 		    return -EINVAL;

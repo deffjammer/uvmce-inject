@@ -69,7 +69,7 @@ int main (int argc, char** argv) {
 	int i;
         int ioctlcmd = UVMCE_INJECT_UME_AT_ADDR;
 
-	eid.cpu = 5;
+	eid.cpu =1;
 
         while ((c = getopt(argc, argv, optstr)) != EOF)
                 switch (c) {
@@ -113,15 +113,19 @@ int main (int argc, char** argv) {
 	    	exit(1);                                      
 	}                                               
 
-	printf("return eid.addr 0x%lx\n", eid.addr);
+	printf("return eid.addr \t%#018lx \n", eid.addr);
+	printf("Enter char to cont..");
+	getchar();
 
 	//Access pages again to trigger fault?
         for (i = 0; i < (PAGE_SIZE > 8); i++) {
+		printf("i %d, page_size %d\n", i, PAGE_SIZE);
         	if (buf[i]) {
                         printf("buf[%d] = %x\n", i, buf[i]);
                 }
          }
-
+	printf("Enter char to finish..");
+	getchar();
 
 	close(fd);                                      
 	return 0;                                       
