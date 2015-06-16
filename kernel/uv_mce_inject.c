@@ -112,7 +112,6 @@ static bool low_pfn(unsigned long pfn)
         return 1;
         //return pfn < max_low_pfn;
 }
-
 unsigned long uvmce_inject_ume_at_addr(unsigned long address, unsigned long length, int cpu)
 {
 	unsigned long phys_addr=-1, poisoned_b_addr=-1;
@@ -165,6 +164,7 @@ out:
 	
 	return poisoned_b_addr;
 } 
+
 struct poison_st_t {
 	//struct page *s_page;
 	unsigned long vaddr;

@@ -1,5 +1,7 @@
 /*
- * gcc -I../include/ uncorrected_memory_error.c -o  ume
+ * gcc -I../include/ uncorrected_memory_error.c -o  ume -lnuma
+ * insmod ../kernel/uv_mce_inject.ko
+ * numactl -m<node> ./ume
  */
 #define _GNU_SOURCE
 #include <sched.h>
@@ -17,6 +19,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/file.h>
+#include <sys/mman.h>
+#include <numaif.h>
 #include <linux/ioctl.h>
 #include "uvmce.h"                           
 
@@ -34,13 +38,17 @@ struct vaddr_info {
 	void		*vaddr;
 };
 
+struct bitmask {
+        unsigned long size; /* number of bits in the map */
+        unsigned long *maskp;
+};
 
 
 void help(){
 	printf("Options:\n");
 }
 
-int cpu_process_affinity(pid_t pid, int cpu)
+int cpu_process_setaffinity(pid_t pid, int cpu)
 {
         cpu_set_t * cpus;
         int ncpus;
@@ -68,20 +76,55 @@ int cpu_process_affinity(pid_t pid, int cpu)
         CPU_FREE(cpus);
         return 0;
 }
+enum {
+        UNIT = 10*1024*1024,
+};
 
+long length;
+long memsize(char *s)
+{
+        char *end;
+        long length = strtoul(s,&end,0);
+        switch (toupper(*end)) {
+        case 'G': length *= 1024;  /*FALL THROUGH*/
+        case 'M': length *= 1024;  /*FALL THROUGH*/
+        case 'K': length *= 1024; break;
+        }
+        return length;
+}  
 
- 
+void hog(void *map)
+{
+        long i;
+        for (i = 0;  i < length; i += UNIT) {
+                long left = length - i;
+                if (left > UNIT)
+                        left = UNIT;
+                putchar('.');
+                fflush(stdout);
+                memset(map + i, 0xff, left);
+        }
+        putchar('\n');
+}
+
 int main (int argc, char** argv) {                                     
 	int fd, ret, c;
-	static char optstr[] = "kuc:";
+	int delay = 0;
+	void *map;
+ 	struct bitmask *nodes, *gnodes;
+	static char optstr[] = "kudc:";
 	unsigned long addr;
-	int i, num_tmp_segs=1;
+	int gpolicy, policy = MPOL_DEFAULT;
+	int i, repeat = 10;
         int ioctlcmd = UVMCE_INJECT_UME_AT_ADDR;
 	struct vaddr_info *vaddrs;
 	unsigned long  flush_bytes;
 	void *vaddrmin = (void *)-1UL, *vaddrmax = NULL;
 
-	eid.cpu =1;
+	nodes = numa_allocate_nodemask();
+	gnodes = numa_allocate_nodemask();
+
+	eid.cpu = sched_getcpu();
 
         while ((c = getopt(argc, argv, optstr)) != EOF)
                 switch (c) {
@@ -94,73 +137,60 @@ int main (int argc, char** argv) {
                 case 'c':
                         eid.cpu = atoi(optarg);
                         break;
+                case 'd':
+                        delay=1;
+                        break;
 		case 'h':
 		default :
 			help();
 			break;
 	}
+	length = memsize("100m");
+	map = mmap(NULL, length, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, 0, 0);
+        if (mbind(map, length, policy, nodes->maskp, nodes->size, 0) < 0){
+                printf("mbind error\n");
+        } 
+	/* Fault in addresses so lookup in kernel works */
+	hog(map);
+	eid.addr = map;
+	printf("cpu %d, vaddr %p length %ld\n", eid.cpu, eid.addr, length);
 
 	//cpu_process_affinity(getpid(), eid.cpu);
 	//sleep(2);
-
-	vaddrs = malloc(num_tmp_segs * sizeof(struct vaddr_info));
-	for (i = 0; i < num_tmp_segs; i++) {
-		vaddrs[i].vaddr = malloc(PAGE_SIZE);
-		//vaddrmin = min(vaddrmin, vaddrs[i].vaddr);
-		//vaddrmax = max(vaddrmax, vaddrs[i].vaddr);
-	}
-	//flush_bytes = (vaddrmax - vaddrmin) + PAGE_SIZE;
-	//printf("vaddrmin %p, vaddrmax %p, bytes 0x%lx\n", vaddrmin, vaddrmax, flush_bytes);
-	printf("vaddrs 0x%lx\n", vaddrs);
-        eid.length = PAGE_SIZE;
-   	eid.addr = (unsigned long)vaddrs[0].vaddr;
-	for (i = 0; i < num_tmp_segs; i++) {
-		memset(vaddrs[i].vaddr, 2, PAGE_SIZE);
-	}
-#if 0
-  	buf[0] = 0;
-        eid.faultit = 0;
-        eid.length = 3;
-   	eid.addr = (ulong)buf;
-	//falut in pages
-        for (i = 0; i < (PAGE_SIZE > 8); i++) {
-        	if (buf[i]) {
-                        printf("buf[%d] = %x\n", i, buf[i]);
-                }
-	}
-#endif
 	if ((fd = open(UVMCE_DEVICE, O_RDWR)) < 0) {                 
 		printf("Failed to open: %s\n", UVMCE_DEVICE);  
 	  	exit (1);                                     
 	}                                               
 	
             
-	if ((ret = ioctl(fd, ioctlcmd, &eid )) < 0){        
+	if (ioctl(fd, ioctlcmd, &eid ) < 0){        
 	    	printf("Failed to INJECT_UME\n");
 	    	exit(1);                                      
 	}                                               
 
+    	gpolicy = -1;
+        if (get_mempolicy(&gpolicy, gnodes->maskp, gnodes->size, map, MPOL_F_ADDR) < 0)
+                perror("get_mempolicy");
+        if (!numa_bitmask_equal(gnodes, nodes)) {
+                printf("nodes differ %lx, %lx!\n", gnodes->maskp[0], nodes->maskp[0]);
+        }
+
+
 	printf("return eid.addr \t%#018lx \n", eid.addr);
-	printf("Enter char to memset..");
-	getchar();
-	for (i = 0; i < num_tmp_segs; i++) {
-		memset(vaddrs[i].vaddr, 1, PAGE_SIZE);
+	if (delay){
+		printf("Enter char to memset..");
+		getchar();
 	}
-#if 0
-	//Access pages again to trigger fault?
-        for (i = 0; i < (PAGE_SIZE > 8); i++) {
-		printf("i %d, page_size %d\n", i, PAGE_SIZE);
-        	if (buf[i]) {
-                        printf("buf[%d] = %x\n", i, buf[i]);
-                }
-         }
-#endif
-	printf("Enter char to free..");
-	getchar();
-	for (i = 0; i < num_tmp_segs; i++) {
-		free (vaddrs[i].vaddr);
+	
+	for (i = 0; i < repeat; i++) {
+		hog(map);
 	}
-	free(vaddrs);
+
+	if (delay) {
+		printf("Enter char to exit..");
+		getchar();
+	}
+
 	close(fd);                                      
 	return 0;                                       
 }
