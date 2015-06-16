@@ -156,10 +156,10 @@ unsigned long uvmce_inject_ume_at_addr(unsigned long address, unsigned long leng
 	read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
 	printk ("READ1 MMR  \t%#018lx \n",read_m ); 
 
-	//uv_write_global_mmr64(pnode, UV_MMR_SCRATCH_1, poisoned_b_addr);
+	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH_1, poisoned_b_addr);
         read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
 	printk ("READ2 MMR  \t%#018lx \n",read_m ); 
-	//uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
+	uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
 
 out:
 	
