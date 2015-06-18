@@ -68,6 +68,34 @@ static struct miscdevice uvmce_miscdev = {
 	&uvmce_fops,
 };
 
+static inline void __native_flush_tlb_global(void)
+{
+        unsigned long flags;
+        unsigned long cr4;
+
+        /*
+         * Read-modify-write to CR4 - protect it from preemption and
+         * from interrupts. (Use the raw variant because this code can
+         * be called from deep inside debugging code.)
+         */
+        raw_local_irq_save(flags);
+
+        cr4 = native_read_cr4();
+        /* clear PGE */
+        native_write_cr4(cr4 & ~X86_CR4_PGE);
+        /* write old PGE again and flush TLBs */
+        native_write_cr4(cr4);
+
+        raw_local_irq_restore(flags);
+}
+
+static inline void __native_flush_tlb_single(unsigned long addr)
+{
+        asm volatile("invlpg (%0)" ::"r" (addr) : "memory");
+}
+
+
+
 
 /**
  * uv_mmtimer_mmap - maps the clock's registers into userspace
@@ -142,9 +170,9 @@ unsigned long uvmce_inject_ume_at_addr(unsigned long address, unsigned long leng
                 goto out;
 
         pte = pte_offset_kernel(pmd, address);
-        printk("Proc: %s\nphys: %#018llx\n", current->comm,
-				(PHYSICAL_PAGE_MASK & (long long)pmd_val(*pmd)));
- 	printk("*pte = 0x%0*Lx\n", (int)(sizeof(*pte) * 2), (u64)pte_val(*pte));
+        //printk("Proc: %s\nphys: %#018llx\n", current->comm,
+	//			(PHYSICAL_PAGE_MASK & (long long)pmd_val(*pmd)));
+ 	//printk("*pte = 0x%0*Lx\n", (int)(sizeof(*pte) * 2), (u64)pte_val(*pte));
 	
 	phys_addr = PHYSICAL_PAGE_MASK & (long long)pte_val(*pte);
 	printk ("Physical \t%#018lx \n",phys_addr); 
@@ -152,13 +180,19 @@ unsigned long uvmce_inject_ume_at_addr(unsigned long address, unsigned long leng
 	poisoned_b_addr = phys_addr | (1UL <<63);
 	printk ("Poison PB  \t%#018lx \n",poisoned_b_addr ); 
 
-	read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
-	printk ("READ1 MMR  \t%#018lx \n",read_m ); 
+	//read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
+	//printk ("READ MMR  \t%#018lx \n",read_m ); 
 
 	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH_1, poisoned_b_addr);
-        read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
-	printk ("READ2 MMR  \t%#018lx \n",read_m ); 
+        //read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
+	//printk ("READ1 0x2d0b00  \t%#018lx \n",read_m ); 
+
 	uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
+	//read_m = uv_read_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2);
+	//printk ("READ  0x605d8 \t%#018lx \n",read_m ); 
+
+	//read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
+	//printk ("READ2 0x2d0b00   \t%#018lx \n",read_m ); 
 
 out:
 	

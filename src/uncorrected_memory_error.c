@@ -45,7 +45,7 @@ struct bitmask {
 
 
 void help(){
-	printf("Options:\n");
+	printf("ume [Hdm:c <cpu>]\n");
 }
 
 int cpu_process_setaffinity(pid_t pid, int cpu)
@@ -93,9 +93,18 @@ long memsize(char *s)
         return length;
 }  
 
-void hog(void *map)
+void hread(char *map)
 {
         long i;
+
+        for (i = 0;  i < length; i++) {
+          	printf("%x",(map[i]));
+        }
+        putchar('\n');
+}void hog(void *map)
+{
+        long i;
+
         for (i = 0;  i < length; i += UNIT) {
                 long left = length - i;
                 if (left > UNIT)
@@ -110,9 +119,11 @@ void hog(void *map)
 int main (int argc, char** argv) {                                     
 	int fd, ret, c;
 	int delay = 0;
-	void *map;
+	int manual = 0;
+	int enableHuge = 0;
+	void *map, *vaddr;
  	struct bitmask *nodes, *gnodes;
-	static char optstr[] = "kudc:";
+	static char optstr[] = "kudHmc:";
 	unsigned long addr;
 	int gpolicy, policy = MPOL_DEFAULT;
 	int i, repeat = 10;
@@ -140,34 +151,50 @@ int main (int argc, char** argv) {
                 case 'd':
                         delay=1;
                         break;
+                case 'H':
+                        enableHuge=1;
+                        break;
+                case 'm':
+			delay=1;//implies delay so pb can be entered
+                        manual=1;
+                        break;
 		case 'h':
 		default :
 			help();
 			break;
 	}
-	length = memsize("100m");
+	length = memsize("1g");
 	map = mmap(NULL, length, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, 0, 0);
         if (mbind(map, length, policy, nodes->maskp, nodes->size, 0) < 0){
                 printf("mbind error\n");
         } 
+	/* Disable Hugepages */
+ 	if (!enableHuge)	
+		madvise(map, length, MADV_NOHUGEPAGE);
+
 	/* Fault in addresses so lookup in kernel works */
 	hog(map);
-	eid.addr = map;
-	printf("cpu %d, vaddr %p length %ld\n", eid.cpu, eid.addr, length);
+
+
+	//vaddr = map + ((length - PAGE_SIZE) / 2);
+	vaddr  = map + (length - (PAGE_SIZE*2) );
+	eid.addr = vaddr;
+	printf("cpu %d, map %p vaddr %p length %lx\n", eid.cpu, map, eid.addr, length);
 
 	//cpu_process_affinity(getpid(), eid.cpu);
 	//sleep(2);
-	if ((fd = open(UVMCE_DEVICE, O_RDWR)) < 0) {                 
-		printf("Failed to open: %s\n", UVMCE_DEVICE);  
-	  	exit (1);                                     
-	}                                               
-	
-            
-	if (ioctl(fd, ioctlcmd, &eid ) < 0){        
-	    	printf("Failed to INJECT_UME\n");
-	    	exit(1);                                      
-	}                                               
-
+	if (!manual){
+		if ((fd = open(UVMCE_DEVICE, O_RDWR)) < 0) {                 
+			printf("Failed to open: %s\n", UVMCE_DEVICE);  
+			exit (1);                                     
+		}                                               
+		
+		    
+		if (ioctl(fd, ioctlcmd, &eid ) < 0){        
+			printf("Failed to INJECT_UME\n");
+			exit(1);                                      
+		}                                               
+	}
     	gpolicy = -1;
         if (get_mempolicy(&gpolicy, gnodes->maskp, gnodes->size, map, MPOL_F_ADDR) < 0)
                 perror("get_mempolicy");
@@ -175,13 +202,13 @@ int main (int argc, char** argv) {
                 printf("nodes differ %lx, %lx!\n", gnodes->maskp[0], nodes->maskp[0]);
         }
 
-
 	printf("return eid.addr \t%#018lx \n", eid.addr);
 	if (delay){
 		printf("Enter char to memset..");
 		getchar();
 	}
 	
+	//hread(map);
 	for (i = 0; i < repeat; i++) {
 		hog(map);
 	}
