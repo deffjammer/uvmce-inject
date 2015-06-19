@@ -47,7 +47,7 @@ struct bitmask {
 void help(){
 	printf("ume [Hdm:c <cpu>  <size>]\n" \
 		"-d	: Waits before memset so process map can be examined \n" \
-		"-m	: Won't inject poison addr from kernel. Implies -d \n"   \
+		"-m	: Won't inject poison addr from kernel. \n"   \
 		"-c	: Cpu used by kernel modeuls to determine pnode \n"      \
 		"-H	: Disables HugePages\n");
 }
@@ -100,12 +100,17 @@ long memsize(char *s)
 void hread(char *map)
 {
         long i;
+	FILE *fp;
 
+ 	fp = fopen("/dev/null", "w");
         for (i = 0;  i < length; i++) {
-          	printf("%x",(map[i]));
+          	fprintf(fp,"%x",(map[i]));
         }
         putchar('\n');
-}void hog(void *map)
+	fclose(fp);
+}
+
+void hog(void *map)
 {
         long i;
 
@@ -125,7 +130,7 @@ int main (int argc, char** argv) {
 	int delay = 0;
 	int manual = 0;
 	int disableHuge = 0;
-	int madvisePoison = 1;
+	int madvisePoison = 0;
 	void *map, *vaddr;
  	struct bitmask *nodes, *gnodes;
 	static char optstr[] = "kudHPmc:";
@@ -142,8 +147,11 @@ int main (int argc, char** argv) {
 
 	eid.cpu = sched_getcpu();
 
-        while ((c = getopt(argc, argv, optstr)) != EOF)
-                switch (c) {
+
+        while (argv[1] && argv[1][0] == '-') {
+        	switch (argv[1][1]) {
+        //while ((c = getopt(argc, argv, optstr)) != EOF)
+         //       switch (c) {
                 case 'k':
                 	ioctlcmd = UVMCE_INJECT_UME;
                 	break;
@@ -164,13 +172,14 @@ int main (int argc, char** argv) {
                         break;
 
                 case 'm':
-			delay=1;//implies delay so pb can be entered
                         manual=1;
                         break;
 		case 'h':
 		default :
 			help();
 			break;
+		}
+		argv++;
 	}
 	if (!argv[1]) 
 		length = memsize("100m");
@@ -179,24 +188,33 @@ int main (int argc, char** argv) {
 
 	map = mmap(NULL, length, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, 0, 0);
         if (mbind(map, length, policy, nodes->maskp, nodes->size, 0) < 0){
-                printf("mbind error\n");
+                perror("mbind error\n");
         } 
 	/* Disable Hugepages */
 	if (disableHuge)
 		madvise(map, length, MADV_NOHUGEPAGE);
-	
-	madvise(map, length,MADV_HWPOISON );
+
+	if (madvisePoison)
+		madvise(map, length,MADV_HWPOISON );
+
+	//madvise(map, length,MADV_WILLNEED );
+    	gpolicy = -1;
+        if (get_mempolicy(&gpolicy, gnodes->maskp, gnodes->size, map, MPOL_F_ADDR) < 0)
+                perror("get_mempolicy");
+        if (!numa_bitmask_equal(gnodes, nodes)) {
+                printf("nodes differ %lx, %lx!\n", gnodes->maskp[0], nodes->maskp[0]);
+        }
 
 	/* Fault in addresses so lookup in kernel works */
 	//hog(map);
-
+	//hread(map);//XXXX Does not fault in pages.
 	//vaddr = map + ((length - PAGE_SIZE) / 2);
 	vaddr  = map + (length - (PAGE_SIZE*2) );
 	eid.addr = vaddr;
 	printf("cpu %d, map %p vaddr %p length %lx\n", eid.cpu, map, eid.addr, length);
 
 	//cpu_process_affinity(getpid(), eid.cpu);
-	//sleep(2);
+
 	if (!manual){
 		if ((fd = open(UVMCE_DEVICE, O_RDWR)) < 0) {                 
 			printf("Failed to open: %s\n", UVMCE_DEVICE);  
@@ -209,20 +227,12 @@ int main (int argc, char** argv) {
 			exit(1);                                      
 		}                                               
 	}
-    	gpolicy = -1;
-        if (get_mempolicy(&gpolicy, gnodes->maskp, gnodes->size, map, MPOL_F_ADDR) < 0)
-                perror("get_mempolicy");
-        if (!numa_bitmask_equal(gnodes, nodes)) {
-                printf("nodes differ %lx, %lx!\n", gnodes->maskp[0], nodes->maskp[0]);
-        }
-
 	printf("return eid.addr \t%#018lx \n", eid.addr);
 	if (delay){
 		printf("Enter char to memset..");
 		getchar();
 	}
 	
-	//hread(map);
 	for (i = 0; i < repeat; i++) {
 		hog(map);
 	}
