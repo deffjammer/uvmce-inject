@@ -124,7 +124,7 @@ int main (int argc, char** argv) {
 	int fd, ret, c;
 	int delay = 0;
 	int manual = 0;
-	int enableHuge = 1;
+	int disableHuge = 0;
 	void *map, *vaddr;
  	struct bitmask *nodes, *gnodes;
 	static char optstr[] = "kudHmc:";
@@ -156,7 +156,7 @@ int main (int argc, char** argv) {
                         delay=1;
                         break;
                 case 'H':
-                        enableHuge=0;
+                        disableHuge=1;
                         break;
                 case 'm':
 			delay=1;//implies delay so pb can be entered
@@ -173,7 +173,7 @@ int main (int argc, char** argv) {
                 printf("mbind error\n");
         } 
 	/* Disable Hugepages */
- 	if (enableHuge)	
+	if (disableHuge)
 		madvise(map, length, MADV_NOHUGEPAGE);
 
 	/* Fault in addresses so lookup in kernel works */
