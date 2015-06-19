@@ -45,7 +45,11 @@ struct bitmask {
 
 
 void help(){
-	printf("ume [Hdm:c <cpu>]\n");
+	printf("ume [Hdm:c <cpu>]\n" \
+		"-d	: Waits before memset so process map can be examined \n" \
+		"-m	: Won't inject poison addr from kernel. Implies -d \n"   \
+		"-c	: Cpu used by kernel modeuls to determine pnode \n"      \
+		"-H	: Disables HugePages\n");
 }
 
 int cpu_process_setaffinity(pid_t pid, int cpu)
@@ -120,7 +124,7 @@ int main (int argc, char** argv) {
 	int fd, ret, c;
 	int delay = 0;
 	int manual = 0;
-	int enableHuge = 0;
+	int enableHuge = 1;
 	void *map, *vaddr;
  	struct bitmask *nodes, *gnodes;
 	static char optstr[] = "kudHmc:";
@@ -152,7 +156,7 @@ int main (int argc, char** argv) {
                         delay=1;
                         break;
                 case 'H':
-                        enableHuge=1;
+                        enableHuge=0;
                         break;
                 case 'm':
 			delay=1;//implies delay so pb can be entered
@@ -163,13 +167,13 @@ int main (int argc, char** argv) {
 			help();
 			break;
 	}
-	length = memsize("1g");
+	length = memsize("10g");
 	map = mmap(NULL, length, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, 0, 0);
         if (mbind(map, length, policy, nodes->maskp, nodes->size, 0) < 0){
                 printf("mbind error\n");
         } 
 	/* Disable Hugepages */
- 	if (!enableHuge)	
+ 	if (enableHuge)	
 		madvise(map, length, MADV_NOHUGEPAGE);
 
 	/* Fault in addresses so lookup in kernel works */
