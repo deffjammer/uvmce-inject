@@ -45,7 +45,7 @@ struct bitmask {
 
 
 void help(){
-	printf("ume [Hdm:c <cpu>]\n" \
+	printf("ume [Hdm:c <cpu>  <size>]\n" \
 		"-d	: Waits before memset so process map can be examined \n" \
 		"-m	: Won't inject poison addr from kernel. Implies -d \n"   \
 		"-c	: Cpu used by kernel modeuls to determine pnode \n"      \
@@ -125,12 +125,13 @@ int main (int argc, char** argv) {
 	int delay = 0;
 	int manual = 0;
 	int disableHuge = 0;
+	int madvisePoison = 1;
 	void *map, *vaddr;
  	struct bitmask *nodes, *gnodes;
-	static char optstr[] = "kudHmc:";
+	static char optstr[] = "kudHPmc:";
 	unsigned long addr;
 	int gpolicy, policy = MPOL_DEFAULT;
-	int i, repeat = 10;
+	int i, repeat = 5;
         int ioctlcmd = UVMCE_INJECT_UME_AT_ADDR;
 	struct vaddr_info *vaddrs;
 	unsigned long  flush_bytes;
@@ -158,6 +159,10 @@ int main (int argc, char** argv) {
                 case 'H':
                         disableHuge=1;
                         break;
+		case 'P':
+                        madvisePoison=1;
+                        break;
+
                 case 'm':
 			delay=1;//implies delay so pb can be entered
                         manual=1;
@@ -167,7 +172,11 @@ int main (int argc, char** argv) {
 			help();
 			break;
 	}
-	length = memsize("10g");
+	if (!argv[1]) 
+		length = memsize("100m");
+	else
+        	length = memsize(argv[1]);
+
 	map = mmap(NULL, length, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, 0, 0);
         if (mbind(map, length, policy, nodes->maskp, nodes->size, 0) < 0){
                 printf("mbind error\n");
@@ -175,10 +184,11 @@ int main (int argc, char** argv) {
 	/* Disable Hugepages */
 	if (disableHuge)
 		madvise(map, length, MADV_NOHUGEPAGE);
+	
+	madvise(map, length,MADV_HWPOISON );
 
 	/* Fault in addresses so lookup in kernel works */
-	hog(map);
-
+	//hog(map);
 
 	//vaddr = map + ((length - PAGE_SIZE) / 2);
 	vaddr  = map + (length - (PAGE_SIZE*2) );
