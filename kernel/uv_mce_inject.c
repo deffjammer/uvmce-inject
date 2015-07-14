@@ -26,7 +26,15 @@
 #include <asm/uv/uv.h>
 #include <asm/uv/uv_hub.h>
 #include <asm/uv/uv_mmrs.h>
+#include <linux/version.h>
+#include <linux/nsproxy.h>
+#include <linux/mm.h>
+#include <linux/hugetlb.h>
+#include <asm/page.h>
+#include <asm/uaccess.h>
 
+
+#include "../include/numatools.h"
 #include "../include/uvmce.h" 
 
 //BMC:r001i01b> mmr harp0.0 0x2d0b00 0x8000000100100000
@@ -67,7 +75,7 @@ static struct miscdevice uvmce_miscdev = {
 	UVMCE_NAME,
 	&uvmce_fops,
 };
-
+#if 0
 static inline void __native_flush_tlb_global(void)
 {
         unsigned long flags;
@@ -93,7 +101,7 @@ static inline void __native_flush_tlb_single(unsigned long addr)
 {
         asm volatile("invlpg (%0)" ::"r" (addr) : "memory");
 }
-
+#endif
 
 
 
@@ -170,9 +178,9 @@ unsigned long uvmce_inject_ume_at_addr(unsigned long address, unsigned long leng
                 goto out;
 
         pte = pte_offset_kernel(pmd, address);
-        //printk("Proc: %s\nphys: %#018llx\n", current->comm,
-	//			(PHYSICAL_PAGE_MASK & (long long)pmd_val(*pmd)));
- 	//printk("*pte = 0x%0*Lx\n", (int)(sizeof(*pte) * 2), (u64)pte_val(*pte));
+        printk("Proc: %s\nphys: %#018llx\n", current->comm,
+				(PHYSICAL_PAGE_MASK & (long long)pmd_val(*pmd)));
+ 	printk("*pte = 0x%0*Lx\n", (int)(sizeof(*pte) * 2), (u64)pte_val(*pte));
 	
 	phys_addr = PHYSICAL_PAGE_MASK & (long long)pte_val(*pte);
 	printk ("Physical \t%#018lx \n",phys_addr); 
@@ -255,26 +263,37 @@ unsigned long uvmce_inject_ume(void)
 }
 #endif
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35))
-static int uvmce_ioctl(struct inode *i, struct file *f, unsigned int cmd, unsigned long arg)
+static int uvmce_ioctl(struct inode *i, struct file *f, unsigned int cmd, void *data)
 #else
-static long uvmce_ioctl(struct file *f, unsigned int cmd, unsigned long arg)
+static long uvmce_ioctl(struct file *f, unsigned int cmd, unsigned long data)
 #endif
 {
         struct err_inj_data eid;
+ 	struct dlook_get_map_info req;
 	int ret = 0; 
+	page_desc_t             *pd, *pdend;
 
 	switch (cmd)
 	{
 		case UVMCE_INJECT_UME:
 		    printk("UVMCE_INJECT_UME\n");
 		    eid.addr = uvmce_inject_ume();
-		    ret = copy_to_user((unsigned long *)arg, &eid, sizeof(struct err_inj_data));
+		    ret = copy_to_user((unsigned long *)data, &eid, sizeof(struct err_inj_data));
 		    break;
 		case UVMCE_INJECT_UME_AT_ADDR:
 		    printk("UVMCE_INJECT_UME_AT_ADDR\n");
-		    ret = copy_from_user(&eid, (unsigned long *)arg, sizeof(struct err_inj_data));
+		    ret = copy_from_user(&eid, (unsigned long *)data, sizeof(struct err_inj_data));
 		    eid.addr = uvmce_inject_ume_at_addr(eid.addr, eid.length, eid.cpu);
-		    ret = copy_to_user((unsigned long *)arg, &eid, sizeof(struct err_inj_data));
+		    ret = copy_to_user((unsigned long *)data, &eid, sizeof(struct err_inj_data));
+		    break;
+		case UVMCE_DLOOK:
+		    printk("UVMCE_DLOOK\n");
+
+		    printk("Proc: %s\n", current->comm);
+		    dlook_get_task_map_info((void *) data);
+
+		    //ret = copy_to_user((unsigned long *)arg, &eid, sizeof(struct err_inj_data));
+
 		    break;
 		default:
 		    return -EINVAL;
@@ -304,6 +323,296 @@ uvmce_exit(void)
 {
 	misc_deregister(&uvmce_miscdev);
 	printk(KERN_INFO "exit\n");
+}
+
+#define is_pte_uc(p)		(pte_val(p) & _PAGE_PCD)
+#define nasid_to_cnodeid(n)	n
+#define dlook_pfn_to_nid(a)	(pfn_valid(a) ? pfn_to_nid(a) : -1)
+#define dlook_pfn_to_pnid(a)	(pfn_valid(a) ? pfn_to_nid(a) : -1)
+
+
+static page_desc_t *add_pd_hole(page_desc_t *pd, unsigned long bytes, unsigned long *gbytes)
+{
+	page_desc_t desc = NULL_DESC;
+
+	*gbytes += bytes;
+	desc.flags = PD_HOLE;
+	desc.pte = bytes;
+	*pd = desc;
+	return ++pd;
+}
+
+/*
+ * Convert the memory address part of pteval to the address or
+ * node descriptor that is returned to the user.
+ */
+static inline page_desc_t pteval_to_desc(pte_t pteval, unsigned int flags)
+{
+	page_desc_t desc = NULL_DESC;
+	struct page *page;
+	long pfn;
+
+	if (pte_none(pteval))
+		return desc;
+
+	desc.flags = flags;
+	if (pte_present(pteval)) {
+		pfn = pte_pfn(pteval);
+		desc.pte = pte_val(pteval);
+		desc.pnid = dlook_pfn_to_pnid(pfn);
+		desc.nid = dlook_pfn_to_nid(pfn);
+		desc.flags |= PD_RAM;
+		if (pte_write(pteval))
+			desc.flags |= PD_RW;
+		if (pte_dirty(pteval))
+			desc.flags |= PD_DIRTY;
+		if (is_pte_uc(pteval))
+			desc.flags |= PD_MA_UC;
+		if (pfn_valid(pte_pfn(pteval))) {
+			page = pte_page(pteval);
+			if (PageReserved(page))
+				desc.flags |= PD_RESERVED;
+			if (page_count(page) > 1)
+				desc.flags |= PD_SHARED;
+		}
+
+	} else {
+		desc.flags = PD_SWAPPED;
+	}
+	return desc;
+}
+
+static page_desc_t *
+dlook_huge_pmd(page_desc_t * pd, page_desc_t * pdend, pmd_t * pmd, unsigned long start,
+		unsigned long end, unsigned long *gbytes)
+{
+	*pd++ = pteval_to_desc(*(pte_t *)pmd, PD_HP_2MB);
+	*gbytes += 2 * 1024 * 1024;
+
+	return pd;
+}
+
+static page_desc_t *
+dlook_huge_pud(page_desc_t * pd, page_desc_t * pdend, pud_t * pud, unsigned long start,
+		unsigned long end, unsigned long *gbytes)
+{
+	*pd++ = pteval_to_desc(*(pte_t *)pud, PD_HP_1GB);
+	*gbytes += 1UL * 1024 * 1024 * 1024;
+
+	return pd;
+}
+
+/*
+ * dlook_pte_range
+ *
+ * Scan a L1 page table and return info about pages in the requested vaddr range.
+ *
+ *   Input:
+ *	pd	Pointer to next page_descriptor array entry for returning page information
+ *	pdend	Points to end of pd buffer array.
+ *	pmd	Start of pmd that contains the <start> vaddr
+ *	start	Start of vaddr range
+ *	size	Size of vaddr range
+ *
+ *   Returns:
+ *	pdend if scan terminated because page_descriptor buffer is full.
+ *		OR
+ *	pointer to last entry used+1 if scan reached end of range
+ *
+ *
+ */
+
+static page_desc_t *
+dlook_pte_range(page_desc_t * pd, page_desc_t * pdend, pmd_t * pmd, unsigned long start,
+		unsigned long end, unsigned long *gbytes)
+{
+	pte_t *pte;
+
+	pte = pte_offset_map(pmd, start);
+
+	/*
+	 * If L1 page table is missing, zero out the pd entries & return a
+	 * pointer that corresponds to pdend OR the end of the request range,
+	 * whichever comes first.
+	 */
+	if (pmd_none(*pmd))
+		return add_pd_hole(pd, end - start, gbytes);
+
+	/*
+	 * Return information about each page in the range.
+	 */
+	do {
+		*pd++ = pteval_to_desc(*pte++, 0);
+		start += PAGE_SIZE;
+		*gbytes += PAGE_SIZE;
+	} while (start < end && pd < pdend);
+
+	return pd;
+}
+
+/*
+ * dlook_pmd_range
+ *
+ * Scan a L2 page table and return info about each page in the requested vaddr range.
+ *
+ *   Input:
+ *	pd	Pointer to next page_descriptor array entry for returning page information
+ *	pdend	Points to end of pd buffer array.
+ *	pud	Start of pud that contains the <start> vaddr
+ *	start	Start of vaddr range
+ *	size	Size of vaddr range
+ *
+ *   Returns:
+ *	pdend if scan terminated because page_descriptor buffer is full.
+ *		OR
+ *	pointer to last entry used+1 if scan reached end of range
+ */
+static page_desc_t *
+dlook_pmd_range(page_desc_t * pd, page_desc_t * pdend, pud_t * pud, unsigned long start,
+		unsigned long end, unsigned long *gbytes)
+{
+	unsigned long next;
+	pmd_t *pmd;
+
+	/*
+	 * If L2 page table is missing, zero out the pd entries & return a
+	 * pointer that corresponds to pdend OR the end of the request range,
+	 * whichever comes first.
+	 */
+	if (pud_none(*pud))
+		return add_pd_hole(pd, end - start, gbytes);
+
+	pmd = pmd_offset(pud, start);
+	do {
+		next = pmd_addr_end(start, end);
+		if (unlikely(pmd_large(*pmd)))
+			pd = dlook_huge_pmd(pd, pdend, pmd++, start, next, gbytes);
+		else
+			pd = dlook_pte_range(pd, pdend, pmd++, start, next, gbytes);
+		start = next;
+	} while (start < end && pd < pdend);
+
+	return pd;
+}
+
+
+/*
+ * dlook_pud_range
+ *
+ * Scan an L3 page table and return info about each page in the requested vaddr range.
+ *
+ *   Input:
+ *	pd	Pointer to next page_descriptor array entry for returning page information
+ *	pdend	Points to end of pd buffer array.
+ *	pgd	Start of pgd that contains the <start> vaddr
+ *	start	Start of vaddr range
+ *	size	Size of vaddr range
+ *
+ *   Returns:
+ *	pdend if scan terminated because page_descriptor buffer is full.
+ *		OR
+ *	pointer to last entry used+1 if scan reached end of range
+ */
+static page_desc_t *
+dlook_pud_range(page_desc_t * pd, page_desc_t * pdend, pgd_t * pgd, unsigned long start,
+		unsigned long end, unsigned long *gbytes)
+{
+	pud_t *pud;
+	unsigned long next;
+
+	if (pgd_none(*pgd))
+		return add_pd_hole(pd, end - start, gbytes);
+
+	pud = pud_offset(pgd, start);
+	do {
+		next = pud_addr_end(start, end);
+		if (unlikely(pud_large(*pud)))
+			pd = dlook_huge_pud(pd, pdend, pud++, start, next, gbytes);
+		else
+			pd = dlook_pmd_range(pd, pdend, pud++, start, next, gbytes);
+		start = next;
+	} while (start < end && pd < pdend);
+
+	return pd;
+}
+
+
+/*
+ * dlook_get_task_map_info
+ *
+ * Process the user request to obtain data about pages in an address space.
+ */
+int
+dlook_get_task_map_info(void *data)
+{
+	int err = 0;
+	struct dlook_get_map_info req;
+	page_desc_t *pdbuf, *pd, *pdend;
+	struct task_struct *task;
+	struct mm_struct *mm = 0;
+	struct vm_area_struct *vma;
+	pgd_t *pgd;
+	unsigned long start, end, next, count, gbytes;
+
+	if (copy_from_user(&req, data, sizeof (req)))
+		return -EFAULT;
+
+	start = req.start_vaddr;
+	end = req.end_vaddr;
+
+	printk ("Virt Start: \t%#018lx End: \t%#018lx\n",req.start_vaddr, req.end_vaddr); 
+	if ((pdbuf = (page_desc_t *) __get_free_page(GFP_KERNEL)) == NULL) {
+		err = -ENOMEM;
+		goto done;
+	}
+	pdend = pdbuf + (PAGE_SIZE / sizeof (page_desc_t));
+
+	rcu_read_lock();
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,11,0))
+	task = pid_task(find_pid_ns(req.pid, current->nsproxy->pid_ns_for_children), PIDTYPE_PID);
+#else
+	task = pid_task(find_pid_ns(req.pid, current->nsproxy->pid_ns), PIDTYPE_PID);
+#endif
+	if (task) {
+		task_lock(task);
+		mm = task->mm;
+		if (mm)
+			atomic_inc(&mm->mm_users);
+		task_unlock(task);
+	} else {
+		err = -ESRCH;
+	}
+	rcu_read_unlock();
+	if (!mm)
+		goto done;
+
+	vma = find_vma(mm, start);
+	while (!err && start < end) {
+		pd = pdbuf;
+		down_read(&mm->mmap_sem);
+		pgd = pgd_offset(mm, start);
+
+		while (start < end && pd < pdend) {
+			gbytes = 0;
+			next = pgd_addr_end(start, end);
+			pd = dlook_pud_range(pd, pdend, pgd++, start, next, &gbytes);
+			start += gbytes;
+		}
+		up_read(&mm->mmap_sem);
+
+		count = pd - pdbuf;
+		if (copy_to_user(req.pd, pdbuf, count * sizeof (*pd)))
+			err = -EFAULT;
+		req.pd += count;
+	}
+	mmput(mm);
+
+done:
+	free_page((unsigned long) pdbuf);
+	printk("Done: copy to user..Virt Start: \t%#018lx End: \t%#018lx\n",req.start_vaddr, req.end_vaddr); 
+	if (copy_to_user(data, &req, sizeof (req)))
+		  err = -EFAULT;
+	return err;
 }
 
 module_init(uvmce_init);
