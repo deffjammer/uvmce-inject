@@ -36,7 +36,7 @@ static int      show_holes=1;
 static int      show_libs=0;
 static int      show_pnodes=1;
 static int      show_ptes =1;
-
+static int      fd;
 //	                 Physical                      PTE
 // [7ffff7fb4000] -> 0x005e4b72e000 on pnode   1    0x8000005e4b72e067  MEMORY|RW|DIRTY|SHARED
 
@@ -199,7 +199,6 @@ static void process_map(page_desc_t      *pd,
 {
         int count = 0;
         for (pd=pdbegin, pdend=pd+pages; pd<pdend && addr < addrend; pd++, addr += pagesize) {
-	//printf("pd %p, pdend %p; addr %p addrend %p\n",  pd, pdend, addr,addrend);
 		if (pd->flags & PD_HOLE) {
 			pagesize = pd->pte;
 			mattr = 0;
@@ -210,36 +209,89 @@ static void process_map(page_desc_t      *pd,
 			else
 				nodeid = get_nodeid(*pd);
 			paddr = get_paddr(*pd);
-			//printf("paddr 0x%012lx\n", paddr);
+			//printf("pd %p, addr 0x%012lx phys_addr 0x%012lx\n",  pd, addr, paddr );
 			if (nodeid == INVALID_NODE) {
 				nodeid = 0;
 			}
-				mattr = get_memory_attr(*pd);
-				pagesize = get_pagesize(*pd);
+			mattr = get_memory_attr(*pd);
+			pagesize = get_pagesize(*pd);
+		}
+		if (show_phys) {
+			if (mattr && paddr) {
+				if (show_ptes)
+					sprintf(pte_str, "  0x%016lx  ", pd->pte);
+				printf("\t[%012lx] -> 0x%012lx on %s %3s  %s%s\n",
+					addr, paddr, idstr(), nodestr(nodeid),
+					pte_str, get_memory_attr_str(nodeid, mattr));
 			}
-			if (show_phys) {
-				if (mattr && paddr) {
-					if (show_ptes)
-						sprintf(pte_str, "  0x%016lx  ", pd->pte);
-					printf("\t[%012lx] -> 0x%012lx on %s %3s  %s%s\n",
-						addr, paddr, idstr(), nodestr(nodeid),
-						pte_str, get_memory_attr_str(nodeid, mattr));
-				}
-			} else if (nodeid != nodeid_start || mattr != mattr_start) {
-				if (count)
-					print_memory_block(addr_start, addr, count,
-							   nodeid_start, mattr_start);
-				nodeid_start = nodeid;
-				mattr_start = mattr;
-				addr_start = addr;
-				count = 0;
-			}
-			count++;
+		} else if (nodeid != nodeid_start || mattr != mattr_start) {
+			if (count)
+				print_memory_block(addr_start, addr, count,
+						   nodeid_start, mattr_start);
+			nodeid_start = nodeid;
+			mattr_start = mattr;
+			addr_start = addr;
+			count = 0;
+		}
+		count++;
 	}
 }
 #endif
+static int injected=0;
+void inject_uce(page_desc_t      *pd,
+		page_desc_t      *pdbegin,
+		page_desc_t      *pdend,
+		unsigned long    pages,
+		unsigned long    addr,
+		unsigned long    addrend,
+		unsigned int     pagesize,
+		unsigned long    mattr,
+		unsigned long    nodeid,
+		unsigned long    paddr,
+		char             *pte_str,
+		unsigned long    nodeid_start,
+		unsigned long    mattr_start,
+		unsigned long    addr_start)
+{
+        int count = 0;
+	eid.cpu = sched_getcpu();
+
+	//printf("pdbegin %p addr %p addrend %p pages %ld\n",  pd, addr, addrend, pages);
+        for (pd=pdbegin, pdend=pd+pages; pd<pdend && addr < addrend; pd++, addr += pagesize) {
+		count++;
+		if (pd->flags & PD_HOLE) {
+			pagesize = pd->pte;
+			mattr = 0;
+			nodeid = -1;
+		} else {
+			nodeid = get_pnodeid(*pd);
+			paddr = get_paddr(*pd);
+			if (nodeid == INVALID_NODE)
+				nodeid = 0;
+
+			if ((pages % count)  == 2){
+				printf( "COUNT %d\n", count);
+				mattr = get_memory_attr(*pd);
+				pagesize = get_pagesize(*pd);
+				sprintf(pte_str, "  0x%016lx  ", pd->pte);
+				printf("\t[%012lx] -> 0x%012lx on %s %3s  %s%s\n",
+						addr, paddr, idstr(), nodestr(nodeid),
+						pte_str, get_memory_attr_str(nodeid, mattr));
+
+				eid.addr = paddr;
+				eid.cpu = nodeid;
+				break;//only allow once for now
+			}
+		}
+	} 
+	if (ioctl(fd, UVMCE_INJECT_UME_AT_ADDR, &eid ) < 0){        
+                printf("Failed to INJECT_UME\n");
+                exit(1);
+	}
+
+}
 int main (int argc, char** argv) {                                     
-	int fd, ret, c;
+	int  ret, c;
 	int delay = 0;
 	long length;
 	int cpu = 2;
@@ -357,24 +409,22 @@ int main (int argc, char** argv) {
 
 	process_map(pd,pdbegin, pdend, pages, addr, addrend, pagesize, mattr,
 		    nodeid, paddr, pte_str, nodeid_start, mattr_start, addr_start);
-
 	printf("\n\tcpu %d\n\tstart_vaddr\t 0x%016lx length\t 0x%x\n\tend_vaddr\t 0x%016lx pages\t %ld\n", 
 		cpu, addr , length, addrend, pages);
+	if (delay){
+		printf("Enter char to inject..");
+		getchar();
+	}
 
+	inject_uce(pd,pdbegin, pdend, pages, addr, addrend, pagesize, mattr,
+		    nodeid, paddr, pte_str, nodeid_start, mattr_start, addr_start);
+
+	
 	if (delay){
 		printf("Enter char to memset..");
 		getchar();
 	}
-	//if (!manual){
-	if (0) {
-	ioctlcmd = UVMCE_INJECT_UME_AT_ADDR;
-	/* Setup req to match old eid. Kernel needs help too */    
-	if (ioctl(fd, ioctlcmd, &req ) < 0){        
-		printf("Failed to INJECT_UME\n");
-		exit(1);                                      
-	}                                               
-	}
-	
+
 	for (i = 0; i < repeat; i++) {
 		hog(addr, length);
 	}

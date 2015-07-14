@@ -148,6 +148,7 @@ static bool low_pfn(unsigned long pfn)
         return 1;
         //return pfn < max_low_pfn;
 }
+#if 0
 unsigned long uvmce_inject_ume_at_addr(unsigned long address, unsigned long length, int cpu)
 {
 	unsigned long phys_addr=-1, poisoned_b_addr=-1;
@@ -206,6 +207,41 @@ out:
 	
 	return poisoned_b_addr;
 } 
+#endif 
+unsigned long uvmce_inject_ume_at_addr(unsigned long phys_addr, int pnode )
+{
+	unsigned long poisoned_b_addr=-1;
+ 	unsigned long read_m;
+  	//int pnode, node;  
+	//pnode = uv_blade_to_pnode(uv_cpu_to_blade_id(cpu));
+
+	//node = cpu_to_node(cpu);
+        printk("Proc: %s\nPhysical Addr: %#018llx on node %d\n", current->comm,  phys_addr, pnode);
+
+	poisoned_b_addr = phys_addr | (1UL <<63);
+	printk ("Poison PB  \t%#018lx \n",poisoned_b_addr ); 
+
+	//read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
+	//printk ("READ MMR  \t%#018lx \n",read_m ); 
+
+	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH_1, poisoned_b_addr);
+        //read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
+	//printk ("READ1 0x2d0b00  \t%#018lx \n",read_m ); 
+
+	mb();
+	uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
+	mb();
+	read_m = uv_read_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2);
+	printk ("READ  0x605d8 \t%#018lx \n",read_m ); 
+
+	read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
+	printk ("READ2 0x2d0b00   \t%#018lx \n",read_m ); 
+
+out:
+	
+	return poisoned_b_addr;
+} 
+
 
 struct poison_st_t {
 	//struct page *s_page;
@@ -282,14 +318,12 @@ static long uvmce_ioctl(struct file *f, unsigned int cmd, unsigned long data)
 		    break;
 		case UVMCE_INJECT_UME_AT_ADDR:
 		    printk("UVMCE_INJECT_UME_AT_ADDR\n");
-		    ret = copy_from_user(&eid, (unsigned long *)data, sizeof(struct err_inj_data));
-		    eid.addr = uvmce_inject_ume_at_addr(eid.addr, eid.length, eid.cpu);
-		    ret = copy_to_user((unsigned long *)data, &eid, sizeof(struct err_inj_data));
+                    ret = copy_from_user(&eid, (unsigned long *)data, sizeof(struct err_inj_data));
+                    eid.addr = uvmce_inject_ume_at_addr(eid.addr, eid.cpu);
+                    ret = copy_to_user((unsigned long *)data, &eid, sizeof(struct err_inj_data));
 		    break;
 		case UVMCE_DLOOK:
 		    printk("UVMCE_DLOOK\n");
-
-		    printk("Proc: %s\n", current->comm);
 		    dlook_get_task_map_info((void *) data);
 
 		    //ret = copy_to_user((unsigned long *)arg, &eid, sizeof(struct err_inj_data));
@@ -560,7 +594,7 @@ dlook_get_task_map_info(void *data)
 	start = req.start_vaddr;
 	end = req.end_vaddr;
 
-	printk ("Virt Start: \t%#018lx End: \t%#018lx\n",req.start_vaddr, req.end_vaddr); 
+	//printk ("Virt Start: \t%#018lx End: \t%#018lx\n",req.start_vaddr, req.end_vaddr); 
 	if ((pdbuf = (page_desc_t *) __get_free_page(GFP_KERNEL)) == NULL) {
 		err = -ENOMEM;
 		goto done;
@@ -609,7 +643,7 @@ dlook_get_task_map_info(void *data)
 
 done:
 	free_page((unsigned long) pdbuf);
-	printk("Done: copy to user..Virt Start: \t%#018lx End: \t%#018lx\n",req.start_vaddr, req.end_vaddr); 
+	//printk("Done: copy to user..Virt Start: \t%#018lx End: \t%#018lx\n",req.start_vaddr, req.end_vaddr); 
 	if (copy_to_user(data, &req, sizeof (req)))
 		  err = -EFAULT;
 	return err;
