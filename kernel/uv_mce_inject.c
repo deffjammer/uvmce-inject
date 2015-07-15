@@ -39,7 +39,7 @@
 
 //BMC:r001i01b> mmr harp0.0 0x2d0b00 0x8000000100100000
 //BMC:r001i01b> mmr harp0.0 0x605d8  0x100
-#define UV_MMR_SCRATCH_1      0x2d0b00 
+#define UV_MMR_SCRATCH14      0x2d0b00 
 #define UV_MMR_SMI_SCRATCH_2  0x605d8 
 #define UV_MMR_SMI_WALK_3     0x100 
 #define POISON_BIT            0x8000000000000000
@@ -189,18 +189,18 @@ unsigned long uvmce_inject_ume_at_addr(unsigned long address, unsigned long leng
 	poisoned_b_addr = phys_addr | (1UL <<63);
 	printk ("Poison PB  \t%#018lx \n",poisoned_b_addr ); 
 
-	//read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
+	//read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH14);
 	//printk ("READ MMR  \t%#018lx \n",read_m ); 
 
-	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH_1, poisoned_b_addr);
-        //read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
+	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH14, poisoned_b_addr);
+        //read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH14);
 	//printk ("READ1 0x2d0b00  \t%#018lx \n",read_m ); 
 
 	uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
 	//read_m = uv_read_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2);
 	//printk ("READ  0x605d8 \t%#018lx \n",read_m ); 
 
-	//read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
+	//read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH14);
 	//printk ("READ2 0x2d0b00   \t%#018lx \n",read_m ); 
 
 out:
@@ -221,21 +221,14 @@ unsigned long uvmce_inject_ume_at_addr(unsigned long phys_addr, int pnode )
 	poisoned_b_addr = phys_addr | (1UL <<63);
 	printk ("Poison PB  \t%#018lx \n",poisoned_b_addr ); 
 
-	//read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
-	//printk ("READ MMR  \t%#018lx \n",read_m ); 
-
-	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH_1, poisoned_b_addr);
-        //read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
-	//printk ("READ1 0x2d0b00  \t%#018lx \n",read_m ); 
-
+	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH14, poisoned_b_addr);
 	mb();
+
 	uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
 	mb();
-	read_m = uv_read_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2);
-	printk ("READ  0x605d8 \t%#018lx \n",read_m ); 
-
-	read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
-	printk ("READ2 0x2d0b00   \t%#018lx \n",read_m ); 
+	//MOVE THIS TO DIFFERENT IOCTL CMD so we can check status.
+	//read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH14);
+	//printk ("READ1 MMR SCRATCH14  \t%#018lx \n",read_m ); 
 
 out:
 	
@@ -279,11 +272,11 @@ unsigned long uvmce_inject_ume(void)
 	poisoned_b_addr = phys_addr | (1UL <<63);
 	printk ("Poison PB  \t%#018lx \n",poisoned_b_addr ); 
 
-	read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
-	printk ("READ1 MMR  \t%#018lx \n",read_m ); 
+	read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH14);
+	printk ("READ1 MMR SCRATCH14  \t%#018lx \n",read_m ); 
 
-	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH_1, poisoned_b_addr);
-        read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH_1);
+	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH14, poisoned_b_addr);
+        read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH14);
 	printk ("READ2 MMR  \t%#018lx \n",read_m ); 
 	uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
 

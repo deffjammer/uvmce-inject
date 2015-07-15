@@ -37,6 +37,9 @@ static int      show_libs=0;
 static int      show_pnodes=1;
 static int      show_ptes =1;
 static int      fd;
+static int 	delay = 0;
+static int 	manual = 0;
+static int 	pd_total= 0;
 //	                 Physical                      PTE
 // [7ffff7fb4000] -> 0x005e4b72e000 on pnode   1    0x8000005e4b72e067  MEMORY|RW|DIRTY|SHARED
 
@@ -198,6 +201,7 @@ static void process_map(page_desc_t      *pd,
 
 {
         int count = 0;
+	printf("proces pdbegin %p pdend %p addr %p addrend %p pages %ld \n",  pd, pd+pages, addr, addrend, pages);
         for (pd=pdbegin, pdend=pd+pages; pd<pdend && addr < addrend; pd++, addr += pagesize) {
 		if (pd->flags & PD_HOLE) {
 			pagesize = pd->pte;
@@ -220,7 +224,7 @@ static void process_map(page_desc_t      *pd,
 			if (mattr && paddr) {
 				if (show_ptes)
 					sprintf(pte_str, "  0x%016lx  ", pd->pte);
-				printf("\t[%012lx] -> 0x%012lx on %s %3s  %s%s\n",
+				printf("COUNT %d\t[%012lx] -> 0x%012lx on %s %3s  %s%s\n",count,
 					addr, paddr, idstr(), nodestr(nodeid),
 					pte_str, get_memory_attr_str(nodeid, mattr));
 			}
@@ -235,6 +239,7 @@ static void process_map(page_desc_t      *pd,
 		}
 		count++;
 	}
+	pd_total = count;
 }
 #endif
 static int injected=0;
@@ -258,7 +263,6 @@ void inject_uce(page_desc_t      *pd,
 
 	//printf("pdbegin %p addr %p addrend %p pages %ld\n",  pd, addr, addrend, pages);
         for (pd=pdbegin, pdend=pd+pages; pd<pdend && addr < addrend; pd++, addr += pagesize) {
-		count++;
 		if (pd->flags & PD_HOLE) {
 			pagesize = pd->pte;
 			mattr = 0;
@@ -269,10 +273,11 @@ void inject_uce(page_desc_t      *pd,
 			if (nodeid == INVALID_NODE)
 				nodeid = 0;
 
-			if ((pages % count)  == 2){
-				printf( "COUNT %d\n", count);
-				mattr = get_memory_attr(*pd);
-				pagesize = get_pagesize(*pd);
+			mattr = get_memory_attr(*pd);
+			pagesize = get_pagesize(*pd);
+			if (mattr && paddr) {
+				if ((pd_total / 2) == count){
+				printf( "COUNT %d ", count);
 				sprintf(pte_str, "  0x%016lx  ", pd->pte);
 				printf("\t[%012lx] -> 0x%012lx on %s %3s  %s%s\n",
 						addr, paddr, idstr(), nodestr(nodeid),
@@ -281,21 +286,27 @@ void inject_uce(page_desc_t      *pd,
 				eid.addr = paddr;
 				eid.cpu = nodeid;
 				break;//only allow once for now
+				}
 			}
 		}
+		count++;
 	} 
+	if (delay){
+		printf("Enter char to inject..");
+		getchar();
+	}	
+	if(!manual){
 	if (ioctl(fd, UVMCE_INJECT_UME_AT_ADDR, &eid ) < 0){        
                 printf("Failed to INJECT_UME\n");
                 exit(1);
+	}
 	}
 
 }
 int main (int argc, char** argv) {                                     
 	int  ret, c;
-	int delay = 0;
 	long length;
 	int cpu = 2;
-	int manual = 0;
 	int disableHuge = 0;
 	int madvisePoison = 0;
  	struct bitmask *nodes, *gnodes;
@@ -411,10 +422,7 @@ int main (int argc, char** argv) {
 		    nodeid, paddr, pte_str, nodeid_start, mattr_start, addr_start);
 	printf("\n\tcpu %d\n\tstart_vaddr\t 0x%016lx length\t 0x%x\n\tend_vaddr\t 0x%016lx pages\t %ld\n", 
 		cpu, addr , length, addrend, pages);
-	if (delay){
-		printf("Enter char to inject..");
-		getchar();
-	}
+
 
 	inject_uce(pd,pdbegin, pdend, pages, addr, addrend, pagesize, mattr,
 		    nodeid, paddr, pte_str, nodeid_start, mattr_start, addr_start);
