@@ -224,7 +224,7 @@ static void process_map(page_desc_t      *pd,
 			if (mattr && paddr) {
 				if (show_ptes)
 					sprintf(pte_str, "  0x%016lx  ", pd->pte);
-				printf("\t[%012lx] -> 0x%012lx on %s %3s  %s%s\n",count,
+				printf("\t[%012lx] -> 0x%012lx on %s %3s  %s%s\n",
 					addr, paddr, idstr(), nodestr(nodeid),
 					pte_str, get_memory_attr_str(nodeid, mattr));
 			}
