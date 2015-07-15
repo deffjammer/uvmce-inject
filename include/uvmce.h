@@ -14,7 +14,7 @@
 #define UVMCE_INJECT_UME          _IOR(UVMCE_MAGIC, 1 , char* ) 
 #define UVMCE_INJECT_UME_AT_ADDR  _IOW(UVMCE_MAGIC, 2 , char *)
 #define UVMCE_DLOOK               _IOW(UVMCE_MAGIC, 3 , char *)
-
+#define UVMCE_POLL_SCRATCH14      _IOW(UVMCE_MAGIC, 4 , char *)
 #if 0
 typedef struct {
         unsigned long   pte;            /* physical address of page */

@@ -48,12 +48,13 @@ MODULE_INFO(supported, "external");
 
 #define UVMCE_NAME "uvmce"
 
+static int last_pnode = 0;
+
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35))
 static int uvmce_ioctl(struct inode *, struct file *, unsigned int , unsigned long );
 #else
 static long uvmce_ioctl(struct file *, unsigned int , unsigned long );
 #endif
-static int mce_mmap(struct file *, struct vm_area_struct *);
 
 static struct file_operations uvmce_fops = {
     .owner = THIS_MODULE,
@@ -62,7 +63,6 @@ static struct file_operations uvmce_fops = {
 #else
     .unlocked_ioctl = uvmce_ioctl,
 #endif
-    .mmap = mce_mmap,
 
 };
 
@@ -75,139 +75,6 @@ static struct miscdevice uvmce_miscdev = {
 	UVMCE_NAME,
 	&uvmce_fops,
 };
-#if 0
-static inline void __native_flush_tlb_global(void)
-{
-        unsigned long flags;
-        unsigned long cr4;
-
-        /*
-         * Read-modify-write to CR4 - protect it from preemption and
-         * from interrupts. (Use the raw variant because this code can
-         * be called from deep inside debugging code.)
-         */
-        raw_local_irq_save(flags);
-
-        cr4 = native_read_cr4();
-        /* clear PGE */
-        native_write_cr4(cr4 & ~X86_CR4_PGE);
-        /* write old PGE again and flush TLBs */
-        native_write_cr4(cr4);
-
-        raw_local_irq_restore(flags);
-}
-
-static inline void __native_flush_tlb_single(unsigned long addr)
-{
-        asm volatile("invlpg (%0)" ::"r" (addr) : "memory");
-}
-#endif
-
-
-
-/**
- * uv_mmtimer_mmap - maps the clock's registers into userspace
- * @file: file structure for the device
- * @vma: VMA to map the registers into
- *
- * Calls remap_pfn_range() to map the clock's registers into
- * the calling process' address space.
- */
-static int mce_mmap(struct file *file, struct vm_area_struct *vma)
-{
-#if 0
-        unsigned long uv_mmtimer_addr;
-
-        if (vma->vm_end - vma->vm_start != PAGE_SIZE)
-                return -EINVAL;
-
-        if (vma->vm_flags & VM_WRITE)
-                return -EPERM;
-
-        if (PAGE_SIZE > (1 << 16))
-                return -ENOSYS;
-
-        vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
-
-        uv_mmtimer_addr = UV_LOCAL_MMR_BASE | UVH_RTC;
-        uv_mmtimer_addr &= ~(PAGE_SIZE - 1);
-        uv_mmtimer_addr &= 0xfffffffffffffffUL;
-
-        if (remap_pfn_range(vma, vma->vm_start, uv_mmtimer_addr >> PAGE_SHIFT,
-                                        PAGE_SIZE, vma->vm_page_prot)) {
-                printk(KERN_ERR "remap_pfn_range failed in uv_mmtimer_mmap\n");
-                return -EAGAIN;
-        }
-#endif 
-        return 0;
-}
-
-
-static bool low_pfn(unsigned long pfn)
-{
-        return 1;
-        //return pfn < max_low_pfn;
-}
-#if 0
-unsigned long uvmce_inject_ume_at_addr(unsigned long address, unsigned long length, int cpu)
-{
-	unsigned long phys_addr=-1, poisoned_b_addr=-1;
- 	unsigned long read_m;
-  	int pnode, node;  
-	pgd_t *base = __va(read_cr3());
-        pgd_t *pgd = &base[pgd_index(address)];
-        pmd_t *pmd;
-        pte_t *pte;
-
-	//pgd ->L3 pud->L2 pmd-> L1 pte
-	pnode = uv_blade_to_pnode(uv_cpu_to_blade_id(cpu));
-	node = cpu_to_node(cpu);
-	printk("cpu %d, pnode %d, node %d\n", cpu,pnode, node);
-	printk("user addr 0x%lx\n", address);
-
-        pmd = pmd_offset(pud_offset(pgd, address), address);
-        printk(KERN_CONT "*pde = 0x%0*Lx\n", (int)(sizeof(*pmd) * 2), (u64)pmd_val(*pmd));
-        printk(KERN_CONT "*pde = %#018llx\n", (unsigned long long)pmd_val(*pmd));
-
-        /*
-         * We must not directly access the pte in the highpte
-         * case if the page table is located in highmem.
-         * And let's rather not kmap-atomic the pte, just in case
-         * it's allocated already:
-         */
-        if (!low_pfn(pmd_pfn(*pmd)) || !pmd_present(*pmd) || pmd_large(*pmd))
-                goto out;
-
-        pte = pte_offset_kernel(pmd, address);
-        printk("Proc: %s\nphys: %#018llx\n", current->comm,
-				(PHYSICAL_PAGE_MASK & (long long)pmd_val(*pmd)));
- 	printk("*pte = 0x%0*Lx\n", (int)(sizeof(*pte) * 2), (u64)pte_val(*pte));
-	
-	phys_addr = PHYSICAL_PAGE_MASK & (long long)pte_val(*pte);
-	printk ("Physical \t%#018lx \n",phys_addr); 
-
-	poisoned_b_addr = phys_addr | (1UL <<63);
-	printk ("Poison PB  \t%#018lx \n",poisoned_b_addr ); 
-
-	//read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH14);
-	//printk ("READ MMR  \t%#018lx \n",read_m ); 
-
-	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH14, poisoned_b_addr);
-        //read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH14);
-	//printk ("READ1 0x2d0b00  \t%#018lx \n",read_m ); 
-
-	uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
-	//read_m = uv_read_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2);
-	//printk ("READ  0x605d8 \t%#018lx \n",read_m ); 
-
-	//read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH14);
-	//printk ("READ2 0x2d0b00   \t%#018lx \n",read_m ); 
-
-out:
-	
-	return poisoned_b_addr;
-} 
-#endif 
 unsigned long uvmce_inject_ume_at_addr(unsigned long phys_addr, int pnode )
 {
 	unsigned long poisoned_b_addr=-1;
@@ -219,28 +86,32 @@ unsigned long uvmce_inject_ume_at_addr(unsigned long phys_addr, int pnode )
         printk("Proc: %s\nPhysical Addr: %#018llx on node %d\n", current->comm,  phys_addr, pnode);
 
 	poisoned_b_addr = phys_addr | (1UL <<63);
-	printk ("Poison PB  \t%#018lx \n",poisoned_b_addr ); 
+	printk ("Poison Addr: \t%#018lx \n",poisoned_b_addr ); 
 
 	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH14, poisoned_b_addr);
 	mb();
 
 	uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
 	mb();
-	//MOVE THIS TO DIFFERENT IOCTL CMD so we can check status.
-	//read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH14);
-	//printk ("READ1 MMR SCRATCH14  \t%#018lx \n",read_m ); 
-
-out:
+	last_pnode=pnode;
 	
 	return poisoned_b_addr;
 } 
 
+unsigned long poll_mmr_scratch()
+{
+ 	unsigned long read_m;
+	read_m = uv_read_global_mmr64(last_pnode, UV_MMR_SCRATCH14);
+	printk ("read1 mmr scratch14  \t%#018lx \n",read_m ); 
+	return read_m;
+} 
 
 struct poison_st_t {
-	//struct page *s_page;
-	unsigned long vaddr;
+       //struct page *s_page;
+       unsigned long vaddr;
 };
 struct poison_st_t *ps_addr[1]; 
+
 #if 1
 unsigned long uvmce_inject_ume(void)
 {
@@ -318,10 +189,10 @@ static long uvmce_ioctl(struct file *f, unsigned int cmd, unsigned long data)
 		case UVMCE_DLOOK:
 		    printk("UVMCE_DLOOK\n");
 		    dlook_get_task_map_info((void *) data);
-
-		    //ret = copy_to_user((unsigned long *)arg, &eid, sizeof(struct err_inj_data));
-
 		    break;
+		case UVMCE_POLL_SCRATCH14:
+		    printk("POLL\n");
+		    poll_mmr_scratch();
 		default:
 		    return -EINVAL;
 	}

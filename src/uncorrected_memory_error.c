@@ -201,7 +201,7 @@ static void process_map(page_desc_t      *pd,
 
 {
         int count = 0;
-	printf("proces pdbegin %p pdend %p addr %p addrend %p pages %ld \n",  pd, pd+pages, addr, addrend, pages);
+	printf("pdbegin %p addrend %p pages %ld \n",  pd, addrend, pages);
         for (pd=pdbegin, pdend=pd+pages; pd<pdend && addr < addrend; pd++, addr += pagesize) {
 		if (pd->flags & PD_HOLE) {
 			pagesize = pd->pte;
@@ -224,7 +224,7 @@ static void process_map(page_desc_t      *pd,
 			if (mattr && paddr) {
 				if (show_ptes)
 					sprintf(pte_str, "  0x%016lx  ", pd->pte);
-				printf("COUNT %d\t[%012lx] -> 0x%012lx on %s %3s  %s%s\n",count,
+				printf("\t[%012lx] -> 0x%012lx on %s %3s  %s%s\n",count,
 					addr, paddr, idstr(), nodestr(nodeid),
 					pte_str, get_memory_attr_str(nodeid, mattr));
 			}
@@ -277,7 +277,6 @@ void inject_uce(page_desc_t      *pd,
 			pagesize = get_pagesize(*pd);
 			if (mattr && paddr) {
 				if ((pd_total / 2) == count){
-				printf( "COUNT %d ", count);
 				sprintf(pte_str, "  0x%016lx  ", pd->pte);
 				printf("\t[%012lx] -> 0x%012lx on %s %3s  %s%s\n",
 						addr, paddr, idstr(), nodestr(nodeid),
@@ -302,6 +301,16 @@ void inject_uce(page_desc_t      *pd,
 	}
 	}
 
+}
+
+void poll_mmr_scratch14()
+{
+	unsigned long mmr_status;
+
+	if (ioctl(fd, UVMCE_POLL_SCRATCH14, &mmr_status ) < 0){        
+                printf("Failed to INJECT_UME\n");
+                exit(1);
+	}
 }
 int main (int argc, char** argv) {                                     
 	int  ret, c;
@@ -413,7 +422,7 @@ int main (int argc, char** argv) {
 		exit (1);                                     
 	}                                               
 	    
-	if (ioctl(fd, ioctlcmd, &req ) < 0){        
+	if (ioctl(fd, UVMCE_DLOOK, &req ) < 0){        
 		printf("Failed to INJECT_UME\n");
 		exit(1);                                      
 	}                                               
@@ -436,6 +445,7 @@ int main (int argc, char** argv) {
 	for (i = 0; i < repeat; i++) {
 		hog(addr, length);
 	}
+	poll_mmr_scratch14();
 
 	if (delay) {
 		printf("Enter char to exit..");
