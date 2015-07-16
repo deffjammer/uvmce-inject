@@ -1,7 +1,7 @@
 /*
- * gcc -I../include/ uncorrected_memory_error.c -o  ume -lnuma
+ * gcc -I../include/ uncorrected_memory_error.c -o  uce -lnuma
  * insmod ../kernel/uv_mce_inject.ko
- * ./ume -d <size of mmap>
+ * ./uce -d <size of mmap>
  *
  * 1 - write SCRATCH14 to inject the error.
  * 2 - wait for SCRATCH14[63:56] == 0xac
@@ -380,7 +380,7 @@ int main (int argc, char** argv) {
 		argv++;
 	}
 	if (!argv[1]) 
-		length = memsize("10m");
+		length = memsize("100k");
 	else
         	length = memsize(argv[1]);
 
@@ -433,9 +433,9 @@ int main (int argc, char** argv) {
 		printf("Failed to INJECT_UME\n");
 		exit(1);                                      
 	}                                               
-
 	process_map(pd,pdbegin, pdend, pages, addr, addrend, pagesize, mattr,
 		    nodeid, paddr, pte_str, nodeid_start, mattr_start, addr_start);
+
 	printf("\n\tstart_vaddr\t 0x%016lx length\t 0x%x\n\tend_vaddr\t 0x%016lx pages\t %ld\n", 
 		 addr , length, addrend, pages);
 

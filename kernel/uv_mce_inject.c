@@ -82,13 +82,16 @@ unsigned long uvmce_inject_ume_at_addr(unsigned long phys_addr, int pnode )
 	//pnode = uv_blade_to_pnode(uv_cpu_to_blade_id(cpu));
 
 	//node = cpu_to_node(cpu);
-        printk("Proc: %s\nPhysical Addr: %#018lx on node %d\n", current->comm,  phys_addr, pnode);
+        printk(KERN_INFO "Proc: %s\n", current->comm);
+	printk(KERN_INFO "Physical Addr:  %#018lx on node %d\n", phys_addr, pnode);
 
 	poisoned_b_addr = phys_addr | (1UL <<63);
-	printk ("Poison Addr: \t%#018lx \n",poisoned_b_addr ); 
+	printk (KERN_INFO "UCE Bit set:    %#018lx \n",poisoned_b_addr ); 
 
 	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH14, poisoned_b_addr);
 	mb();
+	
+	printk (KERN_INFO "MMR SCRATCH14:  %#018lx \n",uv_read_global_mmr64(last_pnode, UV_MMR_SCRATCH14)); 
 
 	uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
 	mb();
@@ -101,7 +104,7 @@ unsigned long poll_mmr_scratch(void)
 {
  	unsigned long read_m;
 	read_m = uv_read_global_mmr64(last_pnode, UV_MMR_SCRATCH14);
-	printk ("read1 mmr scratch14  \t%#018lx \n",read_m ); 
+	printk (KERN_INFO "POLL SCRATCH14: %#018lx \n",read_m ); 
 	return read_m;
 } 
 
@@ -174,22 +177,18 @@ static long uvmce_ioctl(struct file *f, unsigned int cmd, unsigned long data)
 	switch (cmd)
 	{
 		case UVMCE_INJECT_UME:
-		    printk("UVMCE_INJECT_UME\n");
 		    eid.addr = uvmce_inject_ume();
 		    ret = copy_to_user((unsigned long *)data, &eid, sizeof(struct err_inj_data));
 		    break;
 		case UVMCE_INJECT_UME_AT_ADDR:
-		    printk("UVMCE_INJECT_UME_AT_ADDR\n");
                     ret = copy_from_user(&eid, (unsigned long *)data, sizeof(struct err_inj_data));
                     eid.addr = uvmce_inject_ume_at_addr(eid.addr, eid.cpu);
                     ret = copy_to_user((unsigned long *)data, &eid, sizeof(struct err_inj_data));
 		    break;
 		case UVMCE_DLOOK:
-		    printk("UVMCE_DLOOK\n");
 		    dlook_get_task_map_info((void *) data);
 		    break;
 		case UVMCE_POLL_SCRATCH14:
-		    printk("POLL\n");
 		    mmr_status = poll_mmr_scratch();
 		    ret = copy_to_user((unsigned long *)data, &mmr_status, sizeof(unsigned long));
 		    break;
