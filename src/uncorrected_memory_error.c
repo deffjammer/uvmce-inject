@@ -433,9 +433,9 @@ int main (int argc, char** argv) {
 		printf("Failed to INJECT_UME\n");
 		exit(1);                                      
 	}                                               
-
 	process_map(pd,pdbegin, pdend, pages, addr, addrend, pagesize, mattr,
 		    nodeid, paddr, pte_str, nodeid_start, mattr_start, addr_start);
+
 	printf("\n\tstart_vaddr\t 0x%016lx length\t 0x%x\n\tend_vaddr\t 0x%016lx pages\t %ld\n", 
 		 addr , length, addrend, pages);
 
