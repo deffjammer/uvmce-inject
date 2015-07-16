@@ -82,15 +82,15 @@ unsigned long uvmce_inject_ume_at_addr(unsigned long phys_addr, int pnode )
 	//pnode = uv_blade_to_pnode(uv_cpu_to_blade_id(cpu));
 
 	//node = cpu_to_node(cpu);
-        printk("Proc: %s\nPhysical Addr: %#018lx on node %d\n", current->comm,  phys_addr, pnode);
+        printk(KERN_INFO "Proc: %s\nPhysical Addr: %#018lx on node %d\n", current->comm,  phys_addr, pnode);
 
 	poisoned_b_addr = phys_addr | (1UL <<63);
-	printk ("Poison Addr: \t%#018lx \n",poisoned_b_addr ); 
+	printk (KERN_INFO "Poison Addr: \t%#018lx \n",poisoned_b_addr ); 
 
 	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH14, poisoned_b_addr);
 	mb();
 	
-	printk ("MMR scratch14: \t%#018lx \n",uv_read_global_mmr64(last_pnode, UV_MMR_SCRATCH14)); 
+	printk (KERN_INFO "MMR scratch14: \t%#018lx \n",uv_read_global_mmr64(last_pnode, UV_MMR_SCRATCH14)); 
 
 	uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
 	mb();
@@ -103,7 +103,7 @@ unsigned long poll_mmr_scratch(void)
 {
  	unsigned long read_m;
 	read_m = uv_read_global_mmr64(last_pnode, UV_MMR_SCRATCH14);
-	printk ("POLL: MMR scratch14  \t%#018lx \n",read_m ); 
+	printk (KERN_INFO "POLL: MMR scratch14  \t%#018lx \n",read_m ); 
 	return read_m;
 } 
 
