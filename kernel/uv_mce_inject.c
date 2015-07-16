@@ -78,12 +78,11 @@ static struct miscdevice uvmce_miscdev = {
 unsigned long uvmce_inject_ume_at_addr(unsigned long phys_addr, int pnode )
 {
 	unsigned long poisoned_b_addr=-1;
- 	unsigned long read_m;
   	//int pnode, node;  
 	//pnode = uv_blade_to_pnode(uv_cpu_to_blade_id(cpu));
 
 	//node = cpu_to_node(cpu);
-        printk("Proc: %s\nPhysical Addr: %#018llx on node %d\n", current->comm,  phys_addr, pnode);
+        printk("Proc: %s\nPhysical Addr: %#018lx on node %d\n", current->comm,  phys_addr, pnode);
 
 	poisoned_b_addr = phys_addr | (1UL <<63);
 	printk ("Poison Addr: \t%#018lx \n",poisoned_b_addr ); 
@@ -98,7 +97,7 @@ unsigned long uvmce_inject_ume_at_addr(unsigned long phys_addr, int pnode )
 	return poisoned_b_addr;
 } 
 
-unsigned long poll_mmr_scratch()
+unsigned long poll_mmr_scratch(void)
 {
  	unsigned long read_m;
 	read_m = uv_read_global_mmr64(last_pnode, UV_MMR_SCRATCH14);
@@ -169,9 +168,8 @@ static long uvmce_ioctl(struct file *f, unsigned int cmd, unsigned long data)
 #endif
 {
         struct err_inj_data eid;
- 	struct dlook_get_map_info req;
+	unsigned long mmr_status;
 	int ret = 0; 
-	page_desc_t             *pd, *pdend;
 
 	switch (cmd)
 	{
@@ -192,7 +190,9 @@ static long uvmce_ioctl(struct file *f, unsigned int cmd, unsigned long data)
 		    break;
 		case UVMCE_POLL_SCRATCH14:
 		    printk("POLL\n");
-		    poll_mmr_scratch();
+		    mmr_status = poll_mmr_scratch();
+		    ret = copy_to_user((unsigned long *)data, &mmr_status, sizeof(unsigned long));
+		    break;
 		default:
 		    return -EINVAL;
 	}
@@ -204,13 +204,13 @@ static long uvmce_ioctl(struct file *f, unsigned int cmd, unsigned long data)
 int 
 uvmce_init(void)
 {
-	int res;
+	int ret;
 
 	/* Create the /dev/uvmce entry */
-	if ((res = misc_register(&uvmce_miscdev)) < 0) {
+	if ((ret = misc_register(&uvmce_miscdev)) < 0) {
 		printk(KERN_ERR "%s: failed to register device, %d\n",
-			UVMCE_NAME, res);
-		return res;
+			UVMCE_NAME, ret);
+		return ret;
 	}
 
 	printk(KERN_INFO "init\n");

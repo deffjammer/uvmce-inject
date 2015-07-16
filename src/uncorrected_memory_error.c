@@ -1,8 +1,16 @@
 /*
  * gcc -I../include/ uncorrected_memory_error.c -o  ume -lnuma
  * insmod ../kernel/uv_mce_inject.ko
- * numactl -m<node> ./ume
+ * ./ume -d <size of mmap>
+ *
+ * 1 - write SCRATCH14 to inject the error.
+ * 2 - wait for SCRATCH14[63:56] == 0xac
+ * 3 - write (or read) data from the injected address 
+ * 
  */
+
+
+
 #define _GNU_SOURCE
 #include <sched.h>
 #include <stdio.h>                                
@@ -31,6 +39,8 @@
 #define INVALID_NODE -1
 #define UVMCE_DEVICE "/dev/uvmce"                   
 #define PAGE_SIZE (1 << 12)
+#define UCE_INJECT_SUCCESS 0xAC00000000000000
+
 static int      show_phys=1;
 static int      show_holes=1;
 static int      show_libs=0;
@@ -261,7 +271,6 @@ void inject_uce(page_desc_t      *pd,
         int count = 0;
 	eid.cpu = sched_getcpu();
 
-	//printf("pdbegin %p addr %p addrend %p pages %ld\n",  pd, addr, addrend, pages);
         for (pd=pdbegin, pdend=pd+pages; pd<pdend && addr < addrend; pd++, addr += pagesize) {
 		if (pd->flags & PD_HOLE) {
 			pagesize = pd->pte;
@@ -303,14 +312,16 @@ void inject_uce(page_desc_t      *pd,
 
 }
 
-void poll_mmr_scratch14()
+unsigned long poll_mmr_scratch14()
 {
 	unsigned long mmr_status;
 
-	if (ioctl(fd, UVMCE_POLL_SCRATCH14, &mmr_status ) < 0){        
-                printf("Failed to INJECT_UME\n");
-                exit(1);
+	if (ioctl(fd, UVMCE_POLL_SCRATCH14, &mmr_status ) < 0){
+                printf("Poll IOCTL Failed\n");
 	}
+
+ 	return mmr_status &= UCE_INJECT_SUCCESS;	
+
 }
 int main (int argc, char** argv) {                                     
 	int  ret, c;
@@ -322,8 +333,6 @@ int main (int argc, char** argv) {
 	static char optstr[] = "kudHPmc:";
 	int gpolicy, policy = MPOL_DEFAULT;
 	int i, repeat = 5;
-        //int ioctlcmd = UVMCE_INJECT_UME_AT_ADDR;
-        int ioctlcmd = UVMCE_DLOOK;
 	struct vaddr_info *vaddrs;
 	unsigned long  flush_bytes;
 	void *vaddrmin = (void *)-1UL, *vaddrmax = NULL;
@@ -338,17 +347,14 @@ int main (int argc, char** argv) {
         unsigned int            pagesize = getpagesize();
         char                    pte_str[20];
 
-	nodes = numa_allocate_nodemask();
+	nodes  = numa_allocate_nodemask();
 	gnodes = numa_allocate_nodemask();
 
 
         while (argv[1] && argv[1][0] == '-') {
         	switch (argv[1][1]) {
-                case 'k':
-                	ioctlcmd = UVMCE_INJECT_UME;
-                	break;
-                case 'u':
-                	ioctlcmd = UVMCE_INJECT_UME_AT_ADDR;
+                case 'k': // Need to add this option. Causes crash from kernel fault
+                	//ioctlcmd = UVMCE_INJECT_UME;
                 	break;
                 case 'c':
                         cpu = atoi(optarg);
@@ -378,20 +384,20 @@ int main (int argc, char** argv) {
 	else
         	length = memsize(argv[1]);
 
-	addr = mmap(NULL, length, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, 0, 0);
+	addr =(unsigned long)mmap(NULL, length, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, 0, 0);
 
-        if (mbind(addr, length, policy, nodes->maskp, nodes->size, 0) < 0){
+        if (mbind((void *)addr, length, policy, nodes->maskp, nodes->size, 0) < 0){
                 perror("mbind error\n");
         } 
 	/* Disable Hugepages */
 	if (disableHuge)
-		madvise(addr, length, MADV_NOHUGEPAGE);
+		madvise((void *)addr, length, MADV_NOHUGEPAGE);
 
 	if (madvisePoison)
-		madvise(addr, length,MADV_HWPOISON );
+		madvise((void *)addr, length,MADV_HWPOISON );
 
     	gpolicy = -1;
-        if (get_mempolicy(&gpolicy, gnodes->maskp, gnodes->size, addr, MPOL_F_ADDR) < 0)
+        if (get_mempolicy(&gpolicy, gnodes->maskp, gnodes->size, (void *)addr, MPOL_F_ADDR) < 0)
                 perror("get_mempolicy");
         if (!numa_bitmask_equal(gnodes, nodes)) {
                 printf("nodes differ %lx, %lx!\n", gnodes->maskp[0], nodes->maskp[0]);
@@ -413,8 +419,9 @@ int main (int argc, char** argv) {
         req.pd = pdbegin;
 
 	//cpu_process_affinity(getpid(), eid.cpu);
-	//Fault in Pages
-	hog(addr, length);
+
+	/*Fault in Pages */
+	hog((void *)addr, length);
 
 	/* Get mmap phys_addrs */
 	if ((fd = open(UVMCE_DEVICE, O_RDWR)) < 0) {                 
@@ -429,28 +436,23 @@ int main (int argc, char** argv) {
 
 	process_map(pd,pdbegin, pdend, pages, addr, addrend, pagesize, mattr,
 		    nodeid, paddr, pte_str, nodeid_start, mattr_start, addr_start);
-	printf("\n\tcpu %d\n\tstart_vaddr\t 0x%016lx length\t 0x%x\n\tend_vaddr\t 0x%016lx pages\t %ld\n", 
-		cpu, addr , length, addrend, pages);
+	printf("\n\tstart_vaddr\t 0x%016lx length\t 0x%x\n\tend_vaddr\t 0x%016lx pages\t %ld\n", 
+		 addr , length, addrend, pages);
 
 
 	inject_uce(pd,pdbegin, pdend, pages, addr, addrend, pagesize, mattr,
 		    nodeid, paddr, pte_str, nodeid_start, mattr_start, addr_start);
 
+	if (!poll_mmr_scratch14()){
+		printf("BIOS Read of UCE Failed. Retry?\n");
+	}
 	
 	if (delay){
 		printf("Enter char to memset..");
 		getchar();
 	}
 
-	for (i = 0; i < repeat; i++) {
-		hog(addr, length);
-	}
-	poll_mmr_scratch14();
-
-	if (delay) {
-		printf("Enter char to exit..");
-		getchar();
-	}
+	hog((void *)addr, length);
 
 	close(fd);                                      
 	return 0;                                       
