@@ -83,7 +83,7 @@ unsigned long uvmce_inject_ume_at_addr(unsigned long phys_addr, int pnode )
 
 	//node = cpu_to_node(cpu);
         printk(KERN_INFO "Proc: %s\n", current->comm);
-	printk(KERN_INFO "Physical Addr:   %#018lx on node %d\n", phys_addr, pnode);
+	printk(KERN_INFO "Physical Addr:  %#018lx on node %d\n", phys_addr, pnode);
 
 	poisoned_b_addr = phys_addr | (1UL <<63);
 	printk (KERN_INFO "UCE Bit set:    %#018lx \n",poisoned_b_addr ); 
