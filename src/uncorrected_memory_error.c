@@ -1,7 +1,7 @@
 /*
- * gcc -I../include/ uncorrected_memory_error.c -o  ume -lnuma
+ * gcc -I../include/ uncorrected_memory_error.c -o  uce -lnuma
  * insmod ../kernel/uv_mce_inject.ko
- * ./ume -d <size of mmap>
+ * ./uce -d <size of mmap>
  *
  * 1 - write SCRATCH14 to inject the error.
  * 2 - wait for SCRATCH14[63:56] == 0xac
@@ -380,7 +380,7 @@ int main (int argc, char** argv) {
 		argv++;
 	}
 	if (!argv[1]) 
-		length = memsize("10m");
+		length = memsize("100k");
 	else
         	length = memsize(argv[1]);
 
