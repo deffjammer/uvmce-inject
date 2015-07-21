@@ -330,6 +330,7 @@ int main (int argc, char** argv) {
 	int cpu = 2;
 	int disableHuge = 0;
 	int madvisePoison = 0;
+	int poll_exit=0;
  	struct bitmask *nodes, *gnodes;
 	static char optstr[] = "kudHPmc:";
 	int gpolicy, policy = MPOL_DEFAULT;
@@ -365,6 +366,9 @@ int main (int argc, char** argv) {
                         break;
                 case 'H':
                         disableHuge=1;
+                        break;
+		case 'p':
+			poll_exit=1;
                         break;
 		case 'P':
                         madvisePoison=1;
@@ -422,7 +426,8 @@ int main (int argc, char** argv) {
 	//cpu_process_affinity(getpid(), eid.cpu);
 
 	/*Fault in Pages */
-	hog((void *)addr, length);
+	if( !poll_exit)
+		hog((void *)addr, length);
 
 	/* Get mmap phys_addrs */
 	if ((fd = open(UVMCE_DEVICE, O_RDWR)) < 0) {                 
@@ -434,6 +439,12 @@ int main (int argc, char** argv) {
 		printf("Failed to INJECT_UME\n");
 		exit(1);                                      
 	}                                               
+
+	if (poll_exit){
+		printf("SCRATCH14 0x%lx\n", poll_mmr_scratch14());
+		goto out;
+	}
+
 	process_map(pd,pdbegin, pdend, pages, addr, addrend, pagesize, mattr,
 		    nodeid, paddr, pte_str, nodeid_start, mattr_start, addr_start);
 
@@ -454,7 +465,7 @@ int main (int argc, char** argv) {
 	}
 
 	hog((void *)addr, length);
-
+out:
 	close(fd);                                      
 	return 0;                                       
 }
