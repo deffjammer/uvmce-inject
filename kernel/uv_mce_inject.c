@@ -165,7 +165,7 @@ unsigned long uvmce_inject_ume(void)
 }
 #endif
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35))
-static int uvmce_ioctl(struct inode *i, struct file *f, unsigned int cmd, void *data)
+static int uvmce_ioctl(struct inode *i, struct file *f, unsigned int cmd, unsigned long data)
 #else
 static long uvmce_ioctl(struct file *f, unsigned int cmd, unsigned long data)
 #endif

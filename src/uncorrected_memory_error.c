@@ -28,6 +28,7 @@
 #include <sys/stat.h>
 #include <sys/file.h>
 #include <sys/mman.h>
+#include <asm/mman.h>
 #include <numaif.h>
 #include <linux/ioctl.h>
 #include "uvmce.h"                           
