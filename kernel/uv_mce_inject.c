@@ -91,7 +91,7 @@ unsigned long uvmce_inject_ume_at_addr(unsigned long phys_addr, int pnode )
 	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH14, poisoned_b_addr);
 	mb();
 	
-	printk (KERN_INFO "MMR SCRATCH14:  %#018lx \n",uv_read_global_mmr64(last_pnode, UV_MMR_SCRATCH14)); 
+	printk (KERN_INFO "MMR SCRATCH14:  %#018lx \n",uv_read_global_mmr64(pnode, UV_MMR_SCRATCH14)); 
 
 	uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
 	mb();
