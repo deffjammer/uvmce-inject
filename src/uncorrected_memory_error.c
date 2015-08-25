@@ -253,6 +253,22 @@ static void process_map(page_desc_t      *pd,
 	pd_total = count;
 }
 #endif
+void hog_read(void *map, long length)
+{
+        long i;
+	char buffer[length+1];// Need to allocate this
+
+        for (i = 0;  i < length; i += UNIT) {
+                long left = length - i;
+                if (left > UNIT)
+                        left = UNIT;
+                fflush(stdout);
+                memcpy(&buffer, map + i, left);
+                printf("%012lx\n ", map +i);
+
+        }
+        putchar('\n');
+}
 static int injected=0;
 void inject_uce(page_desc_t      *pd,
 		page_desc_t      *pdbegin,
@@ -464,7 +480,8 @@ int main (int argc, char** argv) {
 		getchar();
 	}
 
-	hog((void *)addr, length);
+	//hog((void *)addr, length);
+	hog_read((void *)addr, length);
 out:
 	close(fd);                                      
 	return 0;                                       
