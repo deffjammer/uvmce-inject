@@ -10,29 +10,13 @@
 
 #define UVMCE_MAGIC 's'                                                   
  
-//#define UVMCE_INJECT_UME          _IO(UVMCE_MAGIC, 1 ) 
 #define UVMCE_INJECT_UME          _IOR(UVMCE_MAGIC, 1 , char* ) 
 #define UVMCE_INJECT_UCE_AT_ADDR  _IOW(UVMCE_MAGIC, 2 , char *)
 #define UVMCE_PATROL_SCRUB_UCE    _IOW(UVMCE_MAGIC, 3 , char *)
 #define UVMCE_DLOOK               _IOW(UVMCE_MAGIC, 4 , char *)
 #define UVMCE_POLL_SCRATCH14      _IOW(UVMCE_MAGIC, 5 , char *)
-#if 0
-typedef struct {
-        unsigned long   pte;            /* physical address of page */
-        signed short    nid;            /* node id (logical) */
-        signed short    pnid;           /* physical node id */
-        unsigned int    flags;          /* page attribute flags */
-} page_desc_t;
 
-
-
-struct dlook_get_map_info {
-        pid_t           pid;
-        size_t          start_vaddr;
-        size_t          end_vaddr;
-        page_desc_t     *pd;
-};              
-#endif 
+#define idstr() (show_pnodes ? "pnode" : "node ")
 
 struct err_inj_data {
 	pid_t pid;
@@ -43,6 +27,8 @@ struct err_inj_data {
         unsigned int flags;
 };                              
 
+
+char* get_memory_attr_str(int , int );
 
 #endif /* __UVMCE_H__ */
 
