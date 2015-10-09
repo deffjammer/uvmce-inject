@@ -42,7 +42,8 @@
 #define UV_MMR_SCRATCH14      0x2d0b00 
 #define UV_MMR_SMI_SCRATCH_2  0x605d8 
 #define UV_MMR_SMI_WALK_3     0x100 
-#define POISON_BIT            0x8000000000000000
+#define UCE_BITS              0x8000000000000000
+#define PS_UCE_BITS           0x7000000000000000
 MODULE_LICENSE("GPL");
 MODULE_INFO(supported, "external");
 
@@ -75,7 +76,7 @@ static struct miscdevice uvmce_miscdev = {
 	UVMCE_NAME,
 	&uvmce_fops,
 };
-unsigned long uvmce_inject_ume_at_addr(unsigned long phys_addr, int pnode )
+unsigned long uvmce_inject_uce_at_addr(unsigned long phys_addr, int pnode )
 {
 	unsigned long poisoned_b_addr=-1;
   	//int pnode, node;  
@@ -100,6 +101,30 @@ unsigned long uvmce_inject_ume_at_addr(unsigned long phys_addr, int pnode )
 	return poisoned_b_addr;
 } 
 
+unsigned long uvmce_patrol_scrub_uce_inject(unsigned long phys_addr, int pnode )
+{
+	unsigned long poisoned_b_addr=-1;
+  	//int pnode, node;  
+	//pnode = uv_blade_to_pnode(uv_cpu_to_blade_id(cpu));
+
+	//node = cpu_to_node(cpu);
+        printk(KERN_INFO "Proc: %s\n", current->comm);
+	printk(KERN_INFO "Physical Addr:  %#018lx on node %d\n", phys_addr, pnode);
+
+	poisoned_b_addr = phys_addr | PS_UCE_BITS; 
+	printk (KERN_INFO "PS UCE Bit set:   %#018lx \n",poisoned_b_addr ); 
+
+	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH14, poisoned_b_addr);
+	mb();
+	
+	printk (KERN_INFO "MMR SCRATCH14:  %#018lx \n",uv_read_global_mmr64(pnode, UV_MMR_SCRATCH14)); 
+
+	//uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
+	mb();
+	last_pnode=pnode;
+	
+	return poisoned_b_addr;
+}
 unsigned long poll_mmr_scratch(void)
 {
  	unsigned long read_m;
@@ -180,9 +205,14 @@ static long uvmce_ioctl(struct file *f, unsigned int cmd, unsigned long data)
 		    eid.addr = uvmce_inject_ume();
 		    ret = copy_to_user((unsigned long *)data, &eid, sizeof(struct err_inj_data));
 		    break;
-		case UVMCE_INJECT_UME_AT_ADDR:
+		case UVMCE_INJECT_UCE_AT_ADDR:
                     ret = copy_from_user(&eid, (unsigned long *)data, sizeof(struct err_inj_data));
-                    eid.addr = uvmce_inject_ume_at_addr(eid.addr, eid.cpu);
+                    eid.addr = uvmce_inject_uce_at_addr(eid.addr, eid.cpu);
+                    ret = copy_to_user((unsigned long *)data, &eid, sizeof(struct err_inj_data));
+		    break;
+		case UVMCE_PATROL_SCRUB_UCE:
+                    ret = copy_from_user(&eid, (unsigned long *)data, sizeof(struct err_inj_data));
+                    eid.addr = uvmce_patrol_scrub_uce_inject(eid.addr, eid.cpu);
                     ret = copy_to_user((unsigned long *)data, &eid, sizeof(struct err_inj_data));
 		    break;
 		case UVMCE_DLOOK:
