@@ -261,7 +261,7 @@ int main (int argc, char** argv) {
 	//cpu_process_affinity(getpid(), eid.cpu);
 
 	/*Fault in Pages */
-	if( !poll_exit)
+	if(!poll_exit)
 		hog((void *)addr, length);
 
 	/* Get mmap phys_addrs */
@@ -271,12 +271,12 @@ int main (int argc, char** argv) {
 	}                                               
 	    
 	if (ioctl(fd, UVMCE_DLOOK, &req ) < 0){        
-		printf("Failed to INJECT_UME\n");
+		printf("Failed to INJECT_UCE\n");
 		exit(1);                                      
 	}                                               
 
 	if (poll_exit){
-		printf("SCRATCH14 0x%lx\n", poll_mmr_scratch14());
+		printf("SCRATCH14 0x%lx\n", poll_mmr_scratch14(fd));
 		goto out;
 	}
 
@@ -290,12 +290,12 @@ int main (int argc, char** argv) {
 	inject_uce(pd,pdbegin, pdend, pages, addr, addrend, pagesize, mattr,
 		    nodeid, paddr, pte_str, nodeid_start, mattr_start, addr_start);
 
-	if (!poll_mmr_scratch14()){
+	if (poll_mmr_scratch14(fd) & UCE_INJECT_SUCCESS){
 		printf("BIOS Read of UCE Failed. Retry?\n");
 	}
 	
 	if (delay){
-		printf("Enter char to memset..");
+		printf("Enter char to consume bad memory..");
 		getchar();
 	}
 

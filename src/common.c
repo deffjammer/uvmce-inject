@@ -244,7 +244,7 @@ void process_map(page_desc_t      *pd,
 }
 #endif
 
-unsigned long poll_mmr_scratch14()
+unsigned long poll_mmr_scratch14(int fd)
 {
 	unsigned long mmr_status;
 
@@ -252,7 +252,8 @@ unsigned long poll_mmr_scratch14()
                 printf("Poll IOCTL Failed\n");
 	}
 
- 	return mmr_status &= UCE_INJECT_SUCCESS;	
+ 	printf( "POLL mmr_status 0x%016lx\n", mmr_status);	
+ 	return mmr_status;	
 
 }
 
