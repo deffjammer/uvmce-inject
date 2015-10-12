@@ -255,7 +255,7 @@ int main (int argc, char** argv) {
 	}                                               
 
 	if (poll_exit){
-		printf("SCRATCH14 0x%lx\n", poll_mmr_scratch14());
+		printf("SCRATCH14 0x%lx\n", poll_mmr_scratch14(fd));
 		goto out;
 	}
 
@@ -269,7 +269,7 @@ int main (int argc, char** argv) {
 	inject_uce(pd,pdbegin, pdend, pages, addr, addrend, pagesize, mattr,
 		    nodeid, paddr, pte_str, nodeid_start, mattr_start, addr_start);
 
-	if (!poll_mmr_scratch14()){
+	if (poll_mmr_scratch14(fd) & UCE_INJECT_SUCCESS){
 		printf("BIOS Read of UCE Failed. Retry?\n");
 	}
 	
