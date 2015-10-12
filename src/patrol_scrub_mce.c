@@ -42,6 +42,8 @@
 #define PAGE_SIZE (1 << 12)
 #define UCE_INJECT_SUCCESS 0xAC00000000000000
 
+extern struct bitmask *numa_allocate_nodemask(void);
+
 static int      show_phys=1;
 static int      show_holes=1;
 static int      show_libs=0;

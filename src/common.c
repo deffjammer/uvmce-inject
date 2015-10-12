@@ -252,8 +252,42 @@ unsigned long poll_mmr_scratch14(int fd)
                 printf("Poll IOCTL Failed\n");
 	}
 
- 	printf( "POLL mmr_status 0x%016lx\n", mmr_status);	
+ 	//printf( "POLL mmr_status 0x%016lx\n", mmr_status);	
  	return mmr_status;	
 
 }
+/*
+ * get information about address from /proc/{pid}/pagemap
+ */
+
+unsigned long long vtop(unsigned long long addr, int proc_id)
+{
+	unsigned long  pinfo;
+	int 	pagesize = 0x1000;
+	int fd;
+	char	pagemapname[64];
+	long offset;
+	
+	offset = addr / pagesize * (sizeof pinfo);
+	
+	/* sprintf(pagemapname, "/proc/%d/pagemap", getpid()); */
+	sprintf(pagemapname, "/proc/%d/pagemap",proc_id);
+
+	fd = open(pagemapname, O_RDONLY);
+	if (fd == -1) {
+		perror(pagemapname);
+		exit(1);
+	}
+	if (pread(fd, &pinfo, sizeof pinfo, offset) != sizeof pinfo) {
+		perror(pagemapname);
+		exit(1);
+	}
+	close(fd);
+	if ((pinfo & (1ull << 63)) == 0) {
+		printf("page not present\n");
+		exit(1);
+	}
+	return ((pinfo & 0x007fffffffffffffull) << 12) + (addr & (pagesize - 1));
+}
+
 
