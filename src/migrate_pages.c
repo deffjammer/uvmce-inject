@@ -42,7 +42,7 @@
 
 
 extern struct bitmask *numa_allocate_nodemask(void);
-
+static int      show_pnodes=1;
 static int      uvmce_fd;
 static int 	delay = 0;
 static int 	manual = 0;
@@ -66,14 +66,15 @@ void help(){
 		"-c	: Cpu used by kernel modeuls to determine pnode \n"      \
 		"-H	: Disables HugePages\n");
 }
+
 /*
  * page offlining
  */
-retire_page(unsigned long long addr)
+retire_page(unsigned long long addr, int retire_fd)
 {
     char page[32];
 
-    if ((retire_fd < 0) || no_migrate || !addr)
+    if ((retire_fd < 0) || !addr)
         return;
     sprintf(page,"0x%llx\n", addr);
     write(retire_fd, page, strlen(page));
@@ -86,31 +87,32 @@ retire_page(unsigned long long addr)
 int
 hard_offline_page(unsigned long long addr)
 {
-    char page[32];
-    struct stat retire_stat;
-    char *filename;
+	char page[32];
+    	struct stat retire_stat;
+    	char *filename;
+	int hard_offline_fd;	
 
-    if (!addr)
-        return -1;
-    if (hard_offline_fd < 0) {
-        filename = HARDRETIRE;
-        if (stat(filename, &retire_stat) < 0) {
-            fprintf(outfd,"hard_offline_page: stat error on %s: %s\n",
-                    filename, strerror(errno));
-            return -1;
-        }
-        if (!S_ISREG(retire_stat.st_mode) || !(S_IWUSR&retire_stat.st_mode)) {
-            fprintf(outfd,"hard_offline_page: %s is not char special file or no write access.\n", filename);
-            return -1;
-        }
-        if ((hard_offline_fd = open(filename, O_WRONLY|O_EXCL, S_IRUSR|S_IWUSR)) < 0) {
-            fprintf(outfd,"hard_offline_page: open error on %s: %s.\n",
-                    filename, strerror(errno));
-            return -1;
-        }
-    }
-    sprintf(page,"0x%llx\n", addr);
-    write(hard_offline_fd, page, strlen(page));
+	if (!addr)
+		return -1;
+
+	filename = HARDOFFLINE;
+	if (stat(filename, &retire_stat) < 0) {
+		printf("hard_offline_page: stat error on %s: %s\n", filename, strerror(errno));
+	    	return -1;
+	}
+	if (!S_ISREG(retire_stat.st_mode) || !(S_IWUSR&retire_stat.st_mode)) {
+	    	printf("hard_offline_page: %s is not char special file or no write access.\n", filename);
+	    	return -1;
+	}
+	if ((hard_offline_fd = open(filename, O_WRONLY|O_EXCL, S_IRUSR|S_IWUSR)) < 0) {
+	    	printf("hard_offline_page: open error on %s: %s.\n", filename, strerror(errno));
+	    	return -1;
+	}
+	
+	sprintf(page,"0x%llx\n", addr);
+	write(hard_offline_fd, page, strlen(page));
+
+	close(hard_offline_fd);
 }
 
 
@@ -160,11 +162,7 @@ void get_phys_page_range(
 		}
 		count++;
 	} 
-	if (delay){
-		printf("Enter char to inject..");
-		getchar();
-	}	
-
+	return;	
 }
 
 int main (int argc, char** argv) {                                     
