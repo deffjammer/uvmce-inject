@@ -82,6 +82,39 @@ retire_page(unsigned long long addr, int retire_fd)
 
 
 /*
+ * soft page offlining for UCEs
+ */
+int
+soft_offline_page(unsigned long long addr)
+{
+	char page[32];
+    	struct stat retire_stat;
+    	char *filename;
+	int soft_offline_fd;	
+
+	if (!addr)
+		return -1;
+
+	filename = SOFTOFFLINE;
+	if (stat(filename, &retire_stat) < 0) {
+		printf("soft_offline_page: stat error on %s: %s\n", filename, strerror(errno));
+	    	return -1;
+	}
+	if (!S_ISREG(retire_stat.st_mode) || !(S_IWUSR&retire_stat.st_mode)) {
+	    	printf("soft_offline_page: %s is not char special file or no write access.\n", filename);
+	    	return -1;
+	}
+	if ((soft_offline_fd = open(filename, O_WRONLY|O_EXCL, S_IRUSR|S_IWUSR)) < 0) {
+	    	printf("soft_offline_page: open error on %s: %s.\n", filename, strerror(errno));
+	    	return -1;
+	}
+	
+	sprintf(page,"0x%llx\n", addr);
+	printf("Soft Offline Page: %s", page);
+	write(soft_offline_fd, page, strlen(page));
+
+	close(soft_offline_fd);
+}/*
  * hard page offlining for UCEs
  */
 int
@@ -110,13 +143,15 @@ hard_offline_page(unsigned long long addr)
 	}
 	
 	sprintf(page,"0x%llx\n", addr);
+	printf("Hard Offline Page: %s", page);
 	write(hard_offline_fd, page, strlen(page));
 
 	close(hard_offline_fd);
 }
 
+unsigned long long  vtop_list[1024];
 
-void get_phys_page_range(
+void get_page_map(
 		   page_desc_t      *pd,
 		   page_desc_t      *pdbegin,
 		   page_desc_t      *pdend,
@@ -149,15 +184,16 @@ void get_phys_page_range(
 			mattr = get_memory_attr(*pd);
 			pagesize = get_pagesize(*pd);
 			if (mattr && paddr) {
-				if ((pd_total / 2) == count){
+				//if ((pd_total / 2) == count){
 				sprintf(pte_str, "  0x%016lx  ", pd->pte);
 				printf("\t[%012lx] -> 0x%012lx on %s %3s  %s%s\n",
 						addr, paddr, idstr(), nodestr(nodeid),
 						pte_str, get_memory_attr_str(nodeid, mattr));
 				eid.addr = paddr;
 				eid.cpu = nodeid;
-				break;//only allow once for now
-				}
+				vtop_list[count] = paddr;
+				//break;//only allow once for now
+			//	}
 			}
 		}
 		count++;
@@ -188,7 +224,8 @@ int main (int argc, char** argv) {
         struct dlook_get_map_info req;
         unsigned int            pagesize = getpagesize();
         char                    pte_str[20];
-
+	int 			softoffline=0;
+	
 	nodes  = numa_allocate_nodemask();
 	gnodes = numa_allocate_nodemask();
 
@@ -211,8 +248,8 @@ int main (int argc, char** argv) {
                         madviseSoftOffline=1;
                         break;
 
-                case 'm':
-                        manual=1;
+                case 's':
+                        softoffline=1;
                         break;
 		case 'h':
 		default :
@@ -222,7 +259,9 @@ int main (int argc, char** argv) {
 		argv++;
 	}
 	if (!argv[1]) 
-		length = memsize("100k");
+		//length = memsize("100k");
+		/* Default is 1 page */
+		length = memsize("4k");
 	else
         	length = memsize(argv[1]);
 
@@ -276,18 +315,19 @@ int main (int argc, char** argv) {
 		exit(1);                                      
 	}                                               
 
-	process_map(pd,pdbegin, pdend, pages, buf, addrend, pagesize, mattr,
-		    nodeid, paddr, pte_str, nodeid_start, mattr_start, addr_start);
-
-	printf("\n\tstart_vaddr\t 0x%016lx length\t 0x%x\n\tend_vaddr\t 0x%016lx pages\t %ld\n", 
-		 buf , length, addrend, pages);
-
-
-	get_phys_page_range(pd,pdbegin, pdend, pages, (unsigned long)buf, addrend, 
+	get_page_map(pd,pdbegin, pdend, pages, (unsigned long)buf, addrend, 
 			    pagesize, mattr, nodeid, paddr, pte_str, nodeid_start, 
 			    mattr_start, addr_start);
 
 
+	printf("\n\tstart_vaddr\t 0x%016lx length\t 0x%x\n\tend_vaddr\t 0x%016lx pages\t %ld\n", 
+		 buf , length, addrend, pages);
+	int n;
+	for (n=0; n<pages; n++){
+		softoffline ?
+		soft_offline_page((unsigned long long)vtop_list[n]) :
+		hard_offline_page((unsigned long long)vtop_list[n]);
+	}
 out:
 	close(uvmce_fd);                                      
 	return 0;                                       
