@@ -159,7 +159,7 @@ void get_page_map(
 		   unsigned long         addrend,
 		   unsigned int          pagesize,
 		   unsigned long         paddr,
-		   unsigned long long  *vtop_list)
+		   unsigned long long  vtop_list[])
 {
         char                    pte_str[20];
 	unsigned long    	nodeid;
@@ -219,7 +219,7 @@ int main (int argc, char** argv) {
         struct dlook_get_map_info req;
         unsigned int            pagesize = getpagesize();
 	int 			softoffline=0;
-	unsigned long long  vtop_list[1024];
+	unsigned long long  vtop_l[1024];
 	
 	nodes  = numa_allocate_nodemask();
 	gnodes = numa_allocate_nodemask();
@@ -309,8 +309,7 @@ int main (int argc, char** argv) {
 		exit(1);                                      
 	}                                               
 
-	get_page_map(pd,pdbegin, pdend, pages, (unsigned long)buf, addrend, 
-			    pagesize, paddr, vtop_list);
+	get_page_map(pd,pdbegin, pdend, pages, (unsigned long)buf, addrend, pagesize, paddr, vtop_l);
 
 
 	printf("\n\tstart_vaddr\t 0x%016lx length\t 0x%x\n\tend_vaddr\t 0x%016lx pages\t %ld\n", 
@@ -318,8 +317,8 @@ int main (int argc, char** argv) {
 	int n;
 	for (n=0; n<pages; n++){
 		softoffline ?
-		soft_offline_page((unsigned long long)vtop_list[n]) :
-		hard_offline_page((unsigned long long)vtop_list[n]);
+		soft_offline_page((unsigned long long)vtop_l[n]) :
+		hard_offline_page((unsigned long long)vtop_l[n]);
 	}
 out:
 	close(uvmce_fd);                                      
