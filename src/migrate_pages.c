@@ -50,7 +50,6 @@ static int 	pd_total= 0;
 /*   Virt		Physical                      PTE
  * [7ffff7fb4000] -> 0x005e4b72e000 on pnode   1    0x8000005e4b72e067  MEMORY|RW|DIRTY|SHARED
  */
-struct err_inj_data eid;
 char *buf;
 
 struct bitmask {
@@ -67,18 +66,6 @@ void help(){
 		"-H	: Disables HugePages\n");
 }
 
-/*
- * page offlining
- */
-retire_page(unsigned long long addr, int retire_fd)
-{
-    char page[32];
-
-    if ((retire_fd < 0) || !addr)
-        return;
-    sprintf(page,"0x%llx\n", addr);
-    write(retire_fd, page, strlen(page));
-}
 
 
 /*
@@ -149,52 +136,6 @@ hard_offline_page(unsigned long long addr)
 	close(hard_offline_fd);
 }
 
-
-void get_page_map(
-		   page_desc_t          *pd,
-		   page_desc_t          *pdbegin,
-		   page_desc_t          *pdend,
-		   unsigned long         pages,
-		   unsigned long         addr,
-		   unsigned long         addrend,
-		   unsigned int          pagesize,
-		   unsigned long         paddr,
-		   unsigned long long  vtop_list[])
-{
-        char                    pte_str[20];
-	unsigned long    	nodeid;
-	unsigned long    	mattr;
-        int 			count = 0;
-
-	eid.cpu = sched_getcpu();
-
-        for (pd=pdbegin, pdend=pd+pages; pd<pdend && addr < addrend; pd++, addr += pagesize) {
-		if (pd->flags & PD_HOLE) {
-			pagesize = pd->pte;
-			mattr = 0;
-			nodeid = -1;
-		} else {
-			nodeid = get_pnodeid(*pd);
-			paddr = get_paddr(*pd);
-			if (nodeid == INVALID_NODE)
-				nodeid = 0;
-
-			mattr = get_memory_attr(*pd);
-			pagesize = get_pagesize(*pd);
-			if (mattr && paddr) {
-				sprintf(pte_str, "  0x%016lx  ", pd->pte);
-				printf("\t[%012lx] -> 0x%012lx on %s %3s  %s%s\n",
-						addr, paddr, idstr(), nodestr(nodeid),
-						pte_str, get_memory_attr_str(nodeid, mattr));
-				eid.addr = paddr;
-				eid.cpu = nodeid;
-				vtop_list[count] = paddr;
-			}
-		}
-		count++;
-	} 
-	return;	
-}
 
 int main (int argc, char** argv) {                                     
 	int  ret, c;
@@ -309,7 +250,8 @@ int main (int argc, char** argv) {
 		exit(1);                                      
 	}                                               
 
-	get_page_map(pd,pdbegin, pdend, pages, (unsigned long)buf, addrend, pagesize, paddr, vtop_l);
+	get_page_map(pd, pdbegin, pdend, pages, (unsigned long)buf,
+		     addrend, pagesize, paddr, vtop_l);
 
 
 	printf("\n\tstart_vaddr\t 0x%016lx length\t 0x%x\n\tend_vaddr\t 0x%016lx pages\t %ld\n", 

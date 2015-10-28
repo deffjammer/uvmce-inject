@@ -290,4 +290,55 @@ unsigned long long vtop(unsigned long long addr, int proc_id)
 	return ((pinfo & 0x007fffffffffffffull) << 12) + (addr & (pagesize - 1));
 }
 
+/*
+ * Get entire page map and attributes. Fill an array of physical address for program to
+ * manipulate how they please. 
+ * TODO Add verbose flag to print map 
+ */
+void get_page_map(
+		   page_desc_t          *pd,
+		   page_desc_t          *pdbegin,
+		   page_desc_t          *pdend,
+		   unsigned long         pages,
+		   unsigned long         addr,
+		   unsigned long         addrend,
+		   unsigned int          pagesize,
+		   unsigned long         paddr,
+		   unsigned long long  vtop_list[])
+{
+        char                    pte_str[20];
+	unsigned long    	nodeid;
+	unsigned long    	mattr;
+        int 			count = 0;
+
+	eid.cpu = sched_getcpu();
+
+        for (pd=pdbegin, pdend=pd+pages; pd<pdend && addr < addrend; pd++, addr += pagesize) {
+		if (pd->flags & PD_HOLE) {
+			pagesize = pd->pte;
+			mattr = 0;
+			nodeid = -1;
+		} else {
+			nodeid = get_pnodeid(*pd);
+			paddr = get_paddr(*pd);
+			if (nodeid == INVALID_NODE)
+				nodeid = 0;
+
+			mattr = get_memory_attr(*pd);
+			pagesize = get_pagesize(*pd);
+			if (mattr && paddr) {
+				sprintf(pte_str, "  0x%016lx  ", pd->pte);
+				printf("\t[%012lx] -> 0x%012lx on %s %3s  %s%s\n",
+						addr, paddr, idstr(), nodestr(nodeid),
+						pte_str, get_memory_attr_str(nodeid, mattr));
+				eid.addr = paddr;
+				eid.cpu = nodeid;
+				//XXX Need to stored nodeid
+				vtop_list[count] = paddr;
+			}
+		}
+		count++;
+	} 
+	return;	
+}
 

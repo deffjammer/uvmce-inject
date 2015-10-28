@@ -57,7 +57,6 @@ static int 	pd_total= 0;
 /*   Virt		Physical                      PTE
  * [7ffff7fb4000] -> 0x005e4b72e000 on pnode   1    0x8000005e4b72e067  MEMORY|RW|DIRTY|SHARED
  */
-struct err_inj_data eid;
 char *buf;
 
 struct bitmask {
@@ -89,6 +88,42 @@ void consume_it(void *map, long length)
 	printf("dead data:%x\n",*injecteddata);
 }
 
+void inject_uce(unsigned long long  vtop_list[], unsigned long pages, 
+		unsigned long nodeid, unsigned int pagesize, int fd)
+{
+	struct err_inj_data eid;
+	unsigned long    addr;
+	unsigned long    paddr;
+        int n;
+        int count = 0;
+
+	eid.cpu = sched_getcpu();
+
+	/* Setting value at memory location  for recovery
+	 * before injecting.
+	 */
+	for (n=0; n<pages; n++){
+		memset((void *)addr, 'A', pagesize);
+		injecteddata = (char *)addr;
+		eid.addr = paddr;
+		eid.cpu = nodeid;
+		printf("Data:%x\n",*injecteddata);
+		count++;
+		if (delay){
+			printf("Enter char to inject..");
+			getchar();
+		}	
+		if(!manual){
+			if (ioctl(fd, UVMCE_INJECT_UCE_AT_ADDR, &eid ) < 0){        
+				printf("Failed to INJECT_UCE\n");
+				close(fd);
+				exit(1);
+			}
+		}
+	}	
+
+}
+#if 0 //orig
 static int injected=0;
 void inject_uce(page_desc_t      *pd,
 		page_desc_t      *pdbegin,
@@ -153,7 +188,7 @@ void inject_uce(page_desc_t      *pd,
 	}
 
 }
-
+#endif 
 unsigned long long uv_vtop(unsigned long r_vaddr)
 {
         unsigned long           mattr, addrend, pages, count, nodeid, paddr = 0;
@@ -317,6 +352,7 @@ int main (int argc, char** argv) {
         struct dlook_get_map_info req;
         unsigned int            pagesize = getpagesize();
         char                    pte_str[20];
+	unsigned long long  vtop_l[1024];
 
 	nodes  = numa_allocate_nodemask();
 	gnodes = numa_allocate_nodemask();
@@ -414,15 +450,18 @@ int main (int argc, char** argv) {
 		goto out;
 	}
 
-	process_map(pd,pdbegin, pdend, pages, buf, addrend, pagesize, mattr,
-		    nodeid, paddr, pte_str, nodeid_start, mattr_start, addr_start);
+	get_page_map(pd, pdbegin, pdend, pages, (unsigned long)buf, addrend, pagesize, paddr, vtop_l);
+//	process_map(pd,pdbegin, pdend, pages, buf, addrend, pagesize, mattr,
+//		    nodeid, paddr, pte_str, nodeid_start, mattr_start, addr_start);
 
 	printf("\n\tstart_vaddr\t 0x%016lx length\t 0x%x\n\tend_vaddr\t 0x%016lx pages\t %ld\n", 
 		 buf , length, addrend, pages);
 
 
-	inject_uce(pd,pdbegin, pdend, pages, (unsigned long)buf, addrend, pagesize, mattr,
-		    nodeid, paddr, pte_str, nodeid_start, mattr_start, addr_start);
+	inject_uce(vtop_l, pages, pagesize, fd, nodeid);
+
+//	inject_uce(pd,pdbegin, pdend, pages, (unsigned long)buf, addrend, pagesize, mattr,
+////		    nodeid, paddr, pte_str, nodeid_start, mattr_start, addr_start);
 
 	if (poll_mmr_scratch14(fd) & UCE_INJECT_SUCCESS){
 		printf("BIOS Read of UCE Failed. Retry?\n");
