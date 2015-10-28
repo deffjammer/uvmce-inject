@@ -250,9 +250,8 @@ int main (int argc, char** argv) {
 		exit(1);                                      
 	}                                               
 
-	get_page_map(pd, pdbegin, pdend, pages, (unsigned long)buf,
+	get_page_map_vtop_array(pd, pdbegin, pdend, pages, (unsigned long)buf,
 		     addrend, pagesize, paddr, vtop_l);
-
 
 	printf("\n\tstart_vaddr\t 0x%016lx length\t 0x%x\n\tend_vaddr\t 0x%016lx pages\t %ld\n", 
 		 buf , length, addrend, pages);

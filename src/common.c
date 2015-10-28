@@ -295,7 +295,7 @@ unsigned long long vtop(unsigned long long addr, int proc_id)
  * manipulate how they please. 
  * TODO Add verbose flag to print map 
  */
-void get_page_map(
+void get_page_map_vtop_array(
 		   page_desc_t          *pd,
 		   page_desc_t          *pdbegin,
 		   page_desc_t          *pdend,

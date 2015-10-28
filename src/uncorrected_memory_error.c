@@ -87,44 +87,6 @@ void consume_it(void *map, long length)
 	 */
 	printf("dead data:%x\n",*injecteddata);
 }
-
-void inject_uce(unsigned long long  vtop_list[], unsigned long pages, 
-		unsigned long nodeid, unsigned int pagesize, int fd)
-{
-	struct err_inj_data eid;
-	unsigned long    addr;
-	unsigned long    paddr;
-        int n;
-        int count = 0;
-
-	eid.cpu = sched_getcpu();
-
-	/* Setting value at memory location  for recovery
-	 * before injecting.
-	 */
-	for (n=0; n<pages; n++){
-		memset((void *)addr, 'A', pagesize);
-		injecteddata = (char *)addr;
-		eid.addr = paddr;
-		eid.cpu = nodeid;
-		printf("Data:%x\n",*injecteddata);
-		count++;
-		if (delay){
-			printf("Enter char to inject..");
-			getchar();
-		}	
-		if(!manual){
-			if (ioctl(fd, UVMCE_INJECT_UCE_AT_ADDR, &eid ) < 0){        
-				printf("Failed to INJECT_UCE\n");
-				close(fd);
-				exit(1);
-			}
-		}
-	}	
-
-}
-#if 0 //orig
-static int injected=0;
 void inject_uce(page_desc_t      *pd,
 		page_desc_t      *pdbegin,
 		page_desc_t      *pdend,
@@ -140,55 +102,39 @@ void inject_uce(page_desc_t      *pd,
 		unsigned long    mattr_start,
 		unsigned long    addr_start)
 {
+	struct err_inj_data eid;
         int count = 0;
 	eid.cpu = sched_getcpu();
 
         for (pd=pdbegin, pdend=pd+pages; pd<pdend && addr < addrend; pd++, addr += pagesize) {
-		if (pd->flags & PD_HOLE) {
-			pagesize = pd->pte;
-			mattr = 0;
-			nodeid = -1;
-		} else {
-			nodeid = get_pnodeid(*pd);
-			paddr = get_paddr(*pd);
-			if (nodeid == INVALID_NODE)
-				nodeid = 0;
-
-			mattr = get_memory_attr(*pd);
-			pagesize = get_pagesize(*pd);
-			if (mattr && paddr) {
-				if ((pd_total / 2) == count){
-				sprintf(pte_str, "  0x%016lx  ", pd->pte);
-				printf("\t[%012lx] -> 0x%012lx on %s %3s  %s%s\n",
-						addr, paddr, idstr(), nodestr(nodeid),
-						pte_str, get_memory_attr_str(nodeid, mattr));
-				/* Setting value at memory location  for recovery
- 				 * before injecting.
- 				 */
-        			memset((void *)addr, 'A', pagesize);
-				injecteddata = (char *)addr;
-				printf("Data:%x\n",*injecteddata);
-				eid.addr = paddr;
-				eid.cpu = nodeid;
-				break;//only allow once for now
-				}
-			}
-		}
+		nodeid = get_pnodeid(*pd);
+		paddr = get_paddr(*pd);
+		pagesize = get_pagesize(*pd);
+		printf("\t[%012lx] -> 0x%012lx on %d\n", addr, paddr, nodeid);
+		/* Setting value at memory location  for recovery
+ 		 * before injecting.
+ 		 */
+        	memset((void *)addr, 'A', pagesize);
+		injecteddata = (char *)addr;
+		printf("Data:%x\n",*injecteddata);
+		eid.addr = paddr;
+		eid.cpu = nodeid;
 		count++;
+		break; //Fix this to allow more than one injection
 	} 
 	if (delay){
 		printf("Enter char to inject..");
 		getchar();
 	}	
 	if(!manual){
-	if (ioctl(fd, UVMCE_INJECT_UCE_AT_ADDR, &eid ) < 0){        
-                printf("Failed to INJECT_UCE\n");
-                exit(1);
-	}
+		if (ioctl(fd, UVMCE_INJECT_UCE_AT_ADDR, &eid ) < 0){        
+			printf("Failed to INJECT_UCE\n");
+			close(fd);
+			exit(1);
+		}
 	}
 
 }
-#endif 
 unsigned long long uv_vtop(unsigned long r_vaddr)
 {
         unsigned long           mattr, addrend, pages, count, nodeid, paddr = 0;
@@ -222,28 +168,15 @@ unsigned long long uv_vtop(unsigned long r_vaddr)
 	} 
         count = 0;
         for (pd=pdbegin, pdend=pd+pages; pd<pdend && r_vaddr < addrend; pd++, r_vaddr += pagesize) {
-		if (pd->flags & PD_HOLE) {
-			pagesize = pd->pte;
-			mattr = 0;
-			nodeid = -1;
-		} else {
 			nodeid = get_pnodeid(*pd);
 			paddr = get_paddr(*pd);
-			if (nodeid == INVALID_NODE) {
-				nodeid = 0;
-			}
 			mattr = get_memory_attr(*pd);
 			pagesize = get_pagesize(*pd);
-		}
-		if (mattr && paddr) {
 			sprintf(pte_str, "  0x%016lx  ", pd->pte);
 			printf("\t[%012lx] -> 0x%012lx on %s %3s  %s%s\n",
 				r_vaddr, paddr, idstr(), nodestr(nodeid),
 				pte_str, get_memory_attr_str(nodeid, mattr));
-		}
-		count++;
 	}
-	pd_total = count;
 
 	return paddr;
 } 
@@ -318,7 +251,7 @@ void memory_error_recover(int sig, siginfo_t *si, void *v)
         // memcpy(buf, si->si_addr,  psize); //Fails cuz No data at recovered vaddr
 	//memcpy(si->si_addr, backup_location, size)// Use backup
         memset((void *)buf, 'A', psize); //Just filling in data
-	printf("recovered data:%x\n", *buf);
+	//printf("recovered data:%x\n", *buf);
         phys = uv_vtop((unsigned long long)m->addr);
         printf("Recovery allocated new page at physical 0x%016lx\n", phys);
 
@@ -450,18 +383,15 @@ int main (int argc, char** argv) {
 		goto out;
 	}
 
-	get_page_map(pd, pdbegin, pdend, pages, (unsigned long)buf, addrend, pagesize, paddr, vtop_l);
-//	process_map(pd,pdbegin, pdend, pages, buf, addrend, pagesize, mattr,
-//		    nodeid, paddr, pte_str, nodeid_start, mattr_start, addr_start);
+	process_map(pd,pdbegin, pdend, pages, buf, addrend, pagesize, mattr,
+		    nodeid, paddr, pte_str, nodeid_start, mattr_start, addr_start);
 
 	printf("\n\tstart_vaddr\t 0x%016lx length\t 0x%x\n\tend_vaddr\t 0x%016lx pages\t %ld\n", 
 		 buf , length, addrend, pages);
 
 
-	inject_uce(vtop_l, pages, pagesize, fd, nodeid);
-
-//	inject_uce(pd,pdbegin, pdend, pages, (unsigned long)buf, addrend, pagesize, mattr,
-////		    nodeid, paddr, pte_str, nodeid_start, mattr_start, addr_start);
+	inject_uce(pd,pdbegin, pdend, pages, (unsigned long)buf, addrend, pagesize, mattr,
+		    nodeid, paddr, pte_str, nodeid_start, mattr_start, addr_start);
 
 	if (poll_mmr_scratch14(fd) & UCE_INJECT_SUCCESS){
 		printf("BIOS Read of UCE Failed. Retry?\n");
