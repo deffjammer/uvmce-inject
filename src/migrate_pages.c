@@ -149,25 +149,23 @@ hard_offline_page(unsigned long long addr)
 	close(hard_offline_fd);
 }
 
-unsigned long long  vtop_list[1024];
 
 void get_page_map(
-		   page_desc_t      *pd,
-		   page_desc_t      *pdbegin,
-		   page_desc_t      *pdend,
-		   unsigned long    pages,
-		   unsigned long    addr,
-		   unsigned long    addrend,
-		   unsigned int     pagesize,
-		   unsigned long    mattr,
-		   unsigned long    nodeid,
-		   unsigned long    paddr,
-		   char             *pte_str,
-		   unsigned long    nodeid_start,
-		   unsigned long    mattr_start,
-		   unsigned long    addr_start)
+		   page_desc_t          *pd,
+		   page_desc_t          *pdbegin,
+		   page_desc_t          *pdend,
+		   unsigned long         pages,
+		   unsigned long         addr,
+		   unsigned long         addrend,
+		   unsigned int          pagesize,
+		   unsigned long         paddr,
+		   unsigned long long  *vtop_list)
 {
-        int count = 0;
+        char                    pte_str[20];
+	unsigned long    	nodeid;
+	unsigned long    	mattr;
+        int 			count = 0;
+
 	eid.cpu = sched_getcpu();
 
         for (pd=pdbegin, pdend=pd+pages; pd<pdend && addr < addrend; pd++, addr += pagesize) {
@@ -184,7 +182,6 @@ void get_page_map(
 			mattr = get_memory_attr(*pd);
 			pagesize = get_pagesize(*pd);
 			if (mattr && paddr) {
-				//if ((pd_total / 2) == count){
 				sprintf(pte_str, "  0x%016lx  ", pd->pte);
 				printf("\t[%012lx] -> 0x%012lx on %s %3s  %s%s\n",
 						addr, paddr, idstr(), nodestr(nodeid),
@@ -192,8 +189,6 @@ void get_page_map(
 				eid.addr = paddr;
 				eid.cpu = nodeid;
 				vtop_list[count] = paddr;
-				//break;//only allow once for now
-			//	}
 			}
 		}
 		count++;
@@ -223,8 +218,8 @@ int main (int argc, char** argv) {
         page_desc_t             *pd, *pdend;
         struct dlook_get_map_info req;
         unsigned int            pagesize = getpagesize();
-        char                    pte_str[20];
 	int 			softoffline=0;
+	unsigned long long  vtop_list[1024];
 	
 	nodes  = numa_allocate_nodemask();
 	gnodes = numa_allocate_nodemask();
@@ -287,7 +282,6 @@ int main (int argc, char** argv) {
                 printf("nodes differ %lx, %lx!\n", gnodes->maskp[0], nodes->maskp[0]);
         }
 
-	strcpy(pte_str, "");
         addrend = ((unsigned long)buf)+length;        
         pages = (addrend-((unsigned long)buf))/pagesize;
 
@@ -316,8 +310,7 @@ int main (int argc, char** argv) {
 	}                                               
 
 	get_page_map(pd,pdbegin, pdend, pages, (unsigned long)buf, addrend, 
-			    pagesize, mattr, nodeid, paddr, pte_str, nodeid_start, 
-			    mattr_start, addr_start);
+			    pagesize, paddr, vtop_list);
 
 
 	printf("\n\tstart_vaddr\t 0x%016lx length\t 0x%x\n\tend_vaddr\t 0x%016lx pages\t %ld\n", 
