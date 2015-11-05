@@ -233,8 +233,8 @@ void process_map(page_desc_t      *pd,
 				print_memory_block(addr_start, addr, count,
 						   nodeid_start, mattr_start);
 			nodeid_start = nodeid;
-			mattr_start = mattr;
-			addr_start = addr;
+			mattr_start  = mattr;
+			addr_start   = addr;
 			count = 0;
 		}
 		count++;
@@ -313,16 +313,17 @@ void get_page_map_vtop_array(
         for (pd=pdbegin, pdend=pd+pages; pd<pdend && addr < addrend; pd++, addr += pagesize) {
 		if (pd->flags & PD_HOLE) {
 			pagesize = pd->pte;
-			mattr = 0;
-			nodeid = -1;
+			mattr    = 0;
+			nodeid   = -1;
 		} else {
 			nodeid = get_pnodeid(*pd);
-			paddr = get_paddr(*pd);
+			paddr  = get_paddr(*pd);
 			if (nodeid == INVALID_NODE)
 				nodeid = 0;
 
-			mattr = get_memory_attr(*pd);
+			mattr    = get_memory_attr(*pd);
 			pagesize = get_pagesize(*pd);
+
 			if (mattr && paddr) {
 				sprintf(pte_str, "  0x%016lx  ", pd->pte);
 				printf("\t[%012lx] -> 0x%012lx on %s %3s  %s%s\n",

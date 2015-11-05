@@ -97,7 +97,6 @@ void inject_uce(page_desc_t      *pd,
 		unsigned long    addr_start)
 {
         int count = 0;
-	eid.cpu = sched_getcpu();
 
         for (pd=pdbegin, pdend=pd+pages; pd<pdend && addr < addrend; pd++, addr += pagesize) {
 		if (pd->flags & PD_HOLE) {
@@ -148,7 +147,6 @@ int main (int argc, char** argv) {
 	int madvisePoison = 0;
 	int poll_exit=0;
  	struct bitmask *nodes, *gnodes;
-	static char optstr[] = "kudHPmc:";
 	int gpolicy, policy = MPOL_DEFAULT;
 	int i, repeat = 5;
 	struct vaddr_info *vaddrs;
@@ -168,14 +166,15 @@ int main (int argc, char** argv) {
 	nodes  = numa_allocate_nodemask();
 	gnodes = numa_allocate_nodemask();
 
+	length = memsize("100k");
 
-        while (argv[1] && argv[1][0] == '-') {
-        	switch (argv[1][1]) {
-                case 'k': // Need to add this option. Causes crash from kernel fault
-                	//ioctlcmd = UVMCE_INJECT_UME;
-                	break;
-                case 'c':
+  	while ((c = getopt (argc, argv, "dHpPMm:c:")) != -1){
+	    switch (c) {
+	        case 'c':
                         cpu = atoi(optarg);
+                        break;
+	        case 'm':
+                        length = memsize(optarg);
                         break;
                 case 'd':
                         delay=1;
@@ -190,7 +189,7 @@ int main (int argc, char** argv) {
                         madvisePoison=1;
                         break;
 
-                case 'm':
+                case 'M':
                         manual=1;
                         break;
 		case 'h':
@@ -198,12 +197,7 @@ int main (int argc, char** argv) {
 			help();
 			break;
 		}
-		argv++;
 	}
-	if (!argv[1]) 
-		length = memsize("100k");
-	else
-        	length = memsize(argv[1]);
 
 	addr =(unsigned long)mmap(NULL, length, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, 0, 0);
 
@@ -234,10 +228,10 @@ int main (int argc, char** argv) {
                 pdcount = pages;
         }
 
-        req.pid = getpid();
+        req.pid         = getpid();
         req.start_vaddr = addr;
-        req.end_vaddr = addrend;
-        req.pd = pdbegin;
+        req.end_vaddr   = addrend;
+        req.pd          = pdbegin;
 
 	cpu_process_setaffinity(getpid(), cpu);
 

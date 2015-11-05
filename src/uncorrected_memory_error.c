@@ -104,11 +104,10 @@ void inject_uce(page_desc_t      *pd,
 {
 	struct err_inj_data eid;
         int count = 0;
-	eid.cpu = sched_getcpu();
 
         for (pd=pdbegin, pdend=pd+pages; pd<pdend && addr < addrend; pd++, addr += pagesize) {
-		nodeid = get_pnodeid(*pd);
-		paddr = get_paddr(*pd);
+		nodeid   = get_pnodeid(*pd);
+		paddr    = get_paddr(*pd);
 		pagesize = get_pagesize(*pd);
 		printf("\t[%012lx] -> 0x%012lx on %d\n", addr, paddr, nodeid);
 		/* Setting value at memory location  for recovery
@@ -148,18 +147,18 @@ unsigned long long uv_vtop(unsigned long r_vaddr)
         char                    pte_str[20];
 
 	pagesize = getpagesize();
-        addrend = r_vaddr + pagesize;
-        pages = (addrend-r_vaddr)/pagesize;
+        addrend  = r_vaddr + pagesize;
+        pages    = (addrend-r_vaddr)/pagesize;
 
         if (pages > pdcount) {
                 pdbegin = realloc(pdbegin, sizeof(page_desc_t)*pages);
                 pdcount = pages;
         }
 
-        req.pid = getpid();
+        req.pid         = getpid();
         req.start_vaddr = r_vaddr;
-        req.end_vaddr = addrend;
-        req.pd = pdbegin;
+        req.end_vaddr   = addrend;
+        req.pd          = pdbegin;
 
 	strcpy(pte_str, "");
 
@@ -168,9 +167,9 @@ unsigned long long uv_vtop(unsigned long r_vaddr)
 	} 
         count = 0;
         for (pd=pdbegin, pdend=pd+pages; pd<pdend && r_vaddr < addrend; pd++, r_vaddr += pagesize) {
-			nodeid = get_pnodeid(*pd);
-			paddr = get_paddr(*pd);
-			mattr = get_memory_attr(*pd);
+			nodeid   = get_pnodeid(*pd);
+			paddr    = get_paddr(*pd);
+			mattr    = get_memory_attr(*pd);
 			pagesize = get_pagesize(*pd);
 			sprintf(pte_str, "  0x%016lx  ", pd->pte);
 			printf("\t[%012lx] -> 0x%012lx on %s %3s  %s%s\n",
@@ -233,7 +232,7 @@ void memory_error_recover(int sig, siginfo_t *si, void *v)
 
 	psize = getpagesize();
 
-        printf("recover: sig=%d si=%p v=%p\n", sig, si, v);
+        printf("memory_error_recover: sig=%d si=%p v=%p\n", sig, si, v);
         printf("Platform memory error at 0x%p\n", si->si_addr);
         printf("addr = %p lsb=%d\n", m->addr, m->lsb);
         newbuf = mmap((void *)m->addr, psize, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_FIXED|MAP_ANONYMOUS|MAP_PRIVATE, -1, 0);
@@ -248,7 +247,7 @@ void memory_error_recover(int sig, siginfo_t *si, void *v)
         }
         buf = newbuf;
 	//printf("newbuf data:%x\n", *newbuf);
-        // memcpy(buf, si->si_addr,  psize); //Fails cuz No data at recovered vaddr
+        //memcpy(buf, si->si_addr,  psize); //Fails cuz No data at recovered vaddr
 	//memcpy(si->si_addr, backup_location, size)// Use backup
         memset((void *)buf, 'A', psize); //Just filling in data
 	//printf("recovered data:%x\n", *buf);
