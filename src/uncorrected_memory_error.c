@@ -66,9 +66,9 @@ struct bitmask {
 
 
 void help(){
-	printf("ume [Hdm:c <cpu>  <size>]\n" \
+	printf("ume [HdM:c <cpu>]\n" \
 		"-d	: Waits before memset so process map can be examined \n" \
-		"-m	: Won't inject poison addr from kernel. \n"   \
+		"-M	: Won't inject poison addr from kernel. \n"   \
 		"-c	: Cpu used by kernel modeuls to determine pnode \n"      \
 		"-H	: Disables HugePages\n");
 }
@@ -118,7 +118,7 @@ void inject_uce(page_desc_t      *pd,
 		injecteddata = (char *)addr;
 		printf("Data:%x\n",*injecteddata);
 		eid.addr = paddr;
-		eid.cpu = nodeid;
+		eid.nodeid = nodeid;
 		count++;
 		break; //Fix this to allow more than one injection
 	} 
@@ -262,7 +262,7 @@ struct sigaction recover_act = {
         .sa_sigaction = memory_error_recover,
         .sa_flags = SA_SIGINFO,
 };
-int main (int argc, char** argv) {                                     
+int main (int argc, char **argv) {                                     
 	int  ret, c;
 	long length;
 	int cpu = 2;
@@ -275,7 +275,7 @@ int main (int argc, char** argv) {
 	int i, repeat = 5;
 	unsigned long  flush_bytes;
 	void *vaddrmin = (void *)-1UL, *vaddrmax = NULL;
-
+	extern char *optarg;	
         static page_desc_t      *pdbegin=NULL;
         static size_t           pdcount=0;
         unsigned long           mattr, addrend, pages, count, nodeid, paddr = 0;
@@ -286,18 +286,22 @@ int main (int argc, char** argv) {
         unsigned int            pagesize = getpagesize();
         char                    pte_str[20];
 	unsigned long long  vtop_l[1024];
+  	char *cvalue = NULL;
+  	int index;
+	int opterr = 0;
 
 	nodes  = numa_allocate_nodemask();
 	gnodes = numa_allocate_nodemask();
 
+	length = memsize("100k");
 
-        while (argv[1] && argv[1][0] == '-') {
-        	switch (argv[1][1]) {
-                case 'k': // Need to add this option. Causes crash from kernel fault
-                	//ioctlcmd = UVMCE_INJECT_UME;
-                	break;
-                case 'c':
+  	while ((c = getopt (argc, argv, "dHpPMm:c:")) != -1){
+	    switch (c) {
+	        case 'c':
                         cpu = atoi(optarg);
+                        break;
+	        case 'm':
+                        length = memsize(optarg);
                         break;
                 case 'd':
                         delay=1;
@@ -312,7 +316,7 @@ int main (int argc, char** argv) {
                         madvisePoison=1;
                         break;
 
-                case 'm':
+                case 'M':
                         manual=1;
                         break;
 		case 'h':
@@ -320,12 +324,7 @@ int main (int argc, char** argv) {
 			help();
 			break;
 		}
-		argv++;
 	}
-	if (!argv[1]) 
-		length = memsize("100k");
-	else
-        	length = memsize(argv[1]);
 
 	buf = mmap(NULL, length, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, 0, 0);
 
@@ -360,7 +359,7 @@ int main (int argc, char** argv) {
         req.end_vaddr = addrend;
         req.pd = pdbegin;
 
-	//cpu_process_affinity(getpid(), eid.cpu);
+	cpu_process_setaffinity(req.pid, cpu);
 	sigaction(SIGBUS, &recover_act, NULL);
 
 	/*Fault in Pages */

@@ -87,7 +87,6 @@ int cpu_process_setaffinity(pid_t pid, int cpu)
         CPU_ZERO_S(size, cpus);
         CPU_SET_S(cpu, ncpus, cpus);
 
-        printf("cpu_process_affinity pid %d, cpu %d\n",pid,cpu);
         if (sched_setaffinity(pid, size, cpus)) {
                 perror("sched_setaffinity");
                 CPU_FREE(cpus);
@@ -311,8 +310,6 @@ void get_page_map_vtop_array(
 	unsigned long    	mattr;
         int 			count = 0;
 
-	eid.cpu = sched_getcpu();
-
         for (pd=pdbegin, pdend=pd+pages; pd<pdend && addr < addrend; pd++, addr += pagesize) {
 		if (pd->flags & PD_HOLE) {
 			pagesize = pd->pte;
@@ -331,8 +328,8 @@ void get_page_map_vtop_array(
 				printf("\t[%012lx] -> 0x%012lx on %s %3s  %s%s\n",
 						addr, paddr, idstr(), nodestr(nodeid),
 						pte_str, get_memory_attr_str(nodeid, mattr));
-				eid.addr = paddr;
-				eid.cpu = nodeid;
+				eid.addr   = paddr;
+				eid.nodeid = nodeid;
 				//XXX Need to stored nodeid
 				vtop_list[count] = paddr;
 			}

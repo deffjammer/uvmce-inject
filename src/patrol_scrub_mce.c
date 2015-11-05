@@ -119,8 +119,8 @@ void inject_uce(page_desc_t      *pd,
 						addr, paddr, idstr(), nodestr(nodeid),
 						pte_str, get_memory_attr_str(nodeid, mattr));
 				injectedAddress = (unsigned int *)addr;
-				eid.addr = paddr;
-				eid.cpu = nodeid;
+				eid.addr   = paddr;
+				eid.nodeid = nodeid;
 				break;//only allow once for now
 				}
 			}
@@ -239,7 +239,7 @@ int main (int argc, char** argv) {
         req.end_vaddr = addrend;
         req.pd = pdbegin;
 
-	//cpu_process_affinity(getpid(), eid.cpu);
+	cpu_process_setaffinity(getpid(), cpu);
 
 	/*Fault in Pages */
 	if( !poll_exit)

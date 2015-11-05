@@ -207,12 +207,12 @@ static long uvmce_ioctl(struct file *f, unsigned int cmd, unsigned long data)
 		    break;
 		case UVMCE_INJECT_UCE_AT_ADDR:
                     ret = copy_from_user(&eid, (unsigned long *)data, sizeof(struct err_inj_data));
-                    eid.addr = uvmce_inject_uce_at_addr(eid.addr, eid.cpu);
+                    eid.addr = uvmce_inject_uce_at_addr(eid.addr, eid.nodeid);
                     ret = copy_to_user((unsigned long *)data, &eid, sizeof(struct err_inj_data));
 		    break;
 		case UVMCE_PATROL_SCRUB_UCE:
                     ret = copy_from_user(&eid, (unsigned long *)data, sizeof(struct err_inj_data));
-                    eid.addr = uvmce_patrol_scrub_uce_inject(eid.addr, eid.cpu);
+                    eid.addr = uvmce_patrol_scrub_uce_inject(eid.addr, eid.nodeid);
                     ret = copy_to_user((unsigned long *)data, &eid, sizeof(struct err_inj_data));
 		    break;
 		case UVMCE_DLOOK:
@@ -487,7 +487,7 @@ dlook_get_task_map_info(void *data)
 	start = req.start_vaddr;
 	end = req.end_vaddr;
 
-	//printk ("Virt Start: \t%#018lx End: \t%#018lx\n",req.start_vaddr, req.end_vaddr); 
+	//printk ("Virt Start:\t%#018lx End:\t%#018lx\n",req.start_vaddr, req.end_vaddr); 
 	if ((pdbuf = (page_desc_t *) __get_free_page(GFP_KERNEL)) == NULL) {
 		err = -ENOMEM;
 		goto done;
