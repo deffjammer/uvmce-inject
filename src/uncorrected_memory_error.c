@@ -52,6 +52,10 @@ extern void process_map(page_desc_t *,
 			unsigned long, unsigned long, unsigned long,
 			unsigned long);
 
+extern void process_pagemap_vtop_array(page_desc_t *, page_desc_t *, page_desc_t *,
+		   	     	       unsigned long, unsigned long, unsigned long,
+		             	       unsigned int, unsigned long, unsigned long long  []);
+
 extern int numa_bitmask_equal(struct bitmask *, struct bitmask *);
  
 static int      fd;
@@ -277,7 +281,8 @@ int main (int argc, char **argv) {
 	page_desc_t             *pd=NULL, *pdend=NULL;
         struct dlook_get_map_info req;
         unsigned int            pagesize = getpagesize();
-	//unsigned long long  vtop_l[1024];
+	/*Needs to be dynamic */
+	unsigned long long  vtop_l[1024];
 
 	nodes  = numa_allocate_nodemask();
 	gnodes = numa_allocate_nodemask();
@@ -369,12 +374,15 @@ int main (int argc, char **argv) {
 		printf("SCRATCH14 0x%lx\n", poll_mmr_scratch14(fd));
 		goto out;
 	}
-
+	process_pagemap_vtop_array(pd,pdbegin, pdend, 
+				   pages, (unsigned long)databuf, addrend, 
+				   pagesize, paddr, vtop_l);
+#if 0
 	process_map(pd, pdbegin, pdend, 
 		    pages, (unsigned long)databuf, addrend, 
 		    pagesize, mattr, nodeid, 
 		    paddr, nodeid_start, mattr_start, addr_start);
-
+#endif 
 	printf("\n\tstart_vaddr\t %p length\t 0x%lx\n\tend_vaddr\t 0x%016lx pages\t %ld\n", 
 		 (void *)databuf , length, addrend, pages);
 

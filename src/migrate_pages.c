@@ -42,7 +42,7 @@
 
 extern struct bitmask *numa_allocate_nodemask(void);
 extern int numa_bitmask_equal(struct bitmask *, struct bitmask *);
-void get_page_map_vtop_array(page_desc_t *, page_desc_t *, page_desc_t *,
+extern void process_pagemap_vtop_array(page_desc_t *, page_desc_t *, page_desc_t *,
 		   	     unsigned long, unsigned long, unsigned long,
 		             unsigned int, unsigned long, unsigned long long  []);
  
@@ -248,7 +248,7 @@ int main (int argc, char** argv) {
 		exit(1);                                      
 	}                                               
 
-	get_page_map_vtop_array(pd, pdbegin, pdend, pages, (unsigned long)buf,
+	process_pagemap_vtop_array(pd, pdbegin, pdend, pages, (unsigned long)buf,
 		     addrend, pagesize, paddr, vtop_l);
 
 	printf("\n\tstart_vaddr\t %p length\t 0x%lx\n\tend_vaddr\t 0x%016lx pages\t %ld\n", 
