@@ -112,7 +112,7 @@ long memsize(char *s)
         return llength;
 }  
 
-void hog(void *map, long length)
+void fault_pages(void *map, long length)
 {
         long i;
 
@@ -183,6 +183,7 @@ void print_memory_block(long addr, long addrend, long count, long nodeid, long m
         else
                 printf(" hole\n");
 }
+
 #if 1
 void process_map(page_desc_t      *pd,
 			page_desc_t      *pdbegin,
@@ -194,14 +195,15 @@ void process_map(page_desc_t      *pd,
 			unsigned long    mattr,
 			unsigned long    nodeid,
 			unsigned long    paddr,
-			char             *pte_str,
 			unsigned long    nodeid_start,
 			unsigned long    mattr_start,
 			unsigned long    addr_start)
 
 {
-        int count = 0;
-	printf("pdbegin %p addrend %p pages %ld \n",  pd, addrend, pages);
+	char            pte_str[20];
+        int 		count = 0;
+
+	printf("addr %p addrend %p pages %ld \n",  (void *)addr, (void *)addrend, pages);
         for (pd=pdbegin, pdend=pd+pages; pd<pdend && addr < addrend; pd++, addr += pagesize) {
 		if (pd->flags & PD_HOLE) {
 			pagesize = pd->pte;
@@ -308,7 +310,8 @@ void get_page_map_vtop_array(
         char                    pte_str[20];
 	unsigned long    	nodeid;
 	unsigned long    	mattr;
-        int 			count = 0;
+        int 			count=0;
+
 
         for (pd=pdbegin, pdend=pd+pages; pd<pdend && addr < addrend; pd++, addr += pagesize) {
 		if (pd->flags & PD_HOLE) {

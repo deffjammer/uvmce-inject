@@ -44,21 +44,25 @@
 #define UCE_INJECT_SUCCESS 0xAC00000000000000
 
 extern struct bitmask *numa_allocate_nodemask(void);
+extern void process_map(page_desc_t *, 
+			page_desc_t *, 
+			page_desc_t *,
+			unsigned long, unsigned long, unsigned long,
+			unsigned int,  unsigned long, unsigned long,
+			unsigned long, unsigned long, unsigned long,
+			unsigned long);
 
-static int      show_phys=1;
-static int      show_holes=1;
-static int      show_libs=0;
-static int      show_pnodes=1;
-static int      show_ptes =1;
+extern int numa_bitmask_equal(struct bitmask *, struct bitmask *);
+ 
 static int      fd;
+static int 	show_pnodes = 0;
 static int 	delay = 0;
 static int 	manual = 0;
-static int 	pd_total= 0;
 /*   Virt		Physical                      PTE
  * [7ffff7fb4000] -> 0x005e4b72e000 on pnode   1    0x8000005e4b72e067  MEMORY|RW|DIRTY|SHARED
  */
-char *buf;
 
+char *databuf;
 struct bitmask {
         unsigned long size; /* number of bits in the map */
         unsigned long *maskp;
@@ -79,7 +83,6 @@ void help(){
 char *injecteddata = NULL;
 void consume_it(void *map, long length)
 {
-	unsigned int dead;
 
 	/* read/consume data by printing it out
 	 * Doing Both causes crash.  One or the other
@@ -97,19 +100,18 @@ void inject_uce(page_desc_t      *pd,
 		unsigned long    mattr,
 		unsigned long    nodeid,
 		unsigned long    paddr,
-		char             *pte_str,
 		unsigned long    nodeid_start,
 		unsigned long    mattr_start,
 		unsigned long    addr_start)
 {
 	struct err_inj_data eid;
-        int count = 0;
+        int    count = 0;
 
         for (pd=pdbegin, pdend=pd+pages; pd<pdend && addr < addrend; pd++, addr += pagesize) {
 		nodeid   = get_pnodeid(*pd);
 		paddr    = get_paddr(*pd);
 		pagesize = get_pagesize(*pd);
-		printf("\t[%012lx] -> 0x%012lx on %d\n", addr, paddr, nodeid);
+		printf("\t[%012lx] -> 0x%012lx on %ld\n", addr, paddr, nodeid);
 		/* Setting value at memory location  for recovery
  		 * before injecting.
  		 */
@@ -136,15 +138,13 @@ void inject_uce(page_desc_t      *pd,
 }
 unsigned long long uv_vtop(unsigned long r_vaddr)
 {
-        unsigned long           mattr, addrend, pages, count, nodeid, paddr = 0;
-        unsigned long           addr_start=0, nodeid_start=-1, mattr_start=-1;
-        char                    *endp;
+        unsigned long           mattr, addrend, pages, nodeid, paddr = 0;
         static page_desc_t      *pdbegin = NULL;
 	static int 		pagesize;
         static size_t           pdcount=0;
         page_desc_t             *pd, *pdend;
-        struct dlook_get_map_info req;
         char                    pte_str[20];
+        struct 	dlook_get_map_info req;
 
 	pagesize = getpagesize();
         addrend  = r_vaddr + pagesize;
@@ -165,7 +165,6 @@ unsigned long long uv_vtop(unsigned long r_vaddr)
 	if (ioctl(fd, UVMCE_DLOOK, &req ) < 0){        
 		exit(1);                                      
 	} 
-        count = 0;
         for (pd=pdbegin, pdend=pd+pages; pd<pdend && r_vaddr < addrend; pd++, r_vaddr += pagesize) {
 			nodeid   = get_pnodeid(*pd);
 			paddr    = get_paddr(*pd);
@@ -226,9 +225,9 @@ struct morebits {
 void memory_error_recover(int sig, siginfo_t *si, void *v)
 {
         struct morebits *m = (struct morebits *)&si->si_addr;
-        char    *newbuf;
-	static int psize;
-	unsigned long long      phys;
+        char               *newbuf;
+	static int 	   psize;
+	unsigned long long phys;
 
 	psize = getpagesize();
 
@@ -245,14 +244,14 @@ void memory_error_recover(int sig, siginfo_t *si, void *v)
                 fprintf(stderr, "Could not allocate at original virtual address\n");
                 exit(1);
         }
-        buf = newbuf;
+        databuf = newbuf;
 	//printf("newbuf data:%x\n", *newbuf);
-        //memcpy(buf, si->si_addr,  psize); //Fails cuz No data at recovered vaddr
+        //memcpy(databuf, si->si_addr,  psize); //Fails cuz No data at recovered vaddr
 	//memcpy(si->si_addr, backup_location, size)// Use backup
-        memset((void *)buf, 'A', psize); //Just filling in data
-	//printf("recovered data:%x\n", *buf);
+        memset((void *)databuf, 'A', psize); //Just filling in data
+	//printf("recovered data:%x\n", *databuf);
         phys = uv_vtop((unsigned long long)m->addr);
-        printf("Recovery allocated new page at physical 0x%016lx\n", phys);
+        printf("Recovery allocated new page at physical 0x%016llx\n", phys);
 
 	exit(1);
 }
@@ -262,32 +261,23 @@ struct sigaction recover_act = {
         .sa_flags = SA_SIGINFO,
 };
 int main (int argc, char **argv) {                                     
-	int  ret, c;
-	long length;
+	int  c;
+	unsigned long length;
 	int cpu = 2;
 	int disableHuge = 0;
 	int madvisePoison = 0;
 	int poll_exit=0;
  	struct bitmask *nodes, *gnodes;
-	static char optstr[] = "kudHPmc:";
 	int gpolicy, policy = MPOL_DEFAULT;
-	int i, repeat = 5;
-	unsigned long  flush_bytes;
-	void *vaddrmin = (void *)-1UL, *vaddrmax = NULL;
 	extern char *optarg;	
         static page_desc_t      *pdbegin=NULL;
         static size_t           pdcount=0;
-        unsigned long           mattr, addrend, pages, count, nodeid, paddr = 0;
+        unsigned long           mattr=0, addrend=0, pages=0, nodeid=0, paddr=0;
         unsigned long           addr_start=0, nodeid_start=-1, mattr_start=-1;
-        char                    *endp;
-        page_desc_t             *pd, *pdend;
+	page_desc_t             *pd=NULL, *pdend=NULL;
         struct dlook_get_map_info req;
         unsigned int            pagesize = getpagesize();
-        char                    pte_str[20];
-	unsigned long long  vtop_l[1024];
-  	char *cvalue = NULL;
-  	int index;
-	int opterr = 0;
+	//unsigned long long  vtop_l[1024];
 
 	nodes  = numa_allocate_nodemask();
 	gnodes = numa_allocate_nodemask();
@@ -325,28 +315,27 @@ int main (int argc, char **argv) {
 		}
 	}
 
-	buf = mmap(NULL, length, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, 0, 0);
+	databuf = mmap(NULL, length, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, 0, 0);
 
-        if (mbind((void *)buf, length, policy, nodes->maskp, nodes->size, 0) < 0){
+        if (mbind((void *)databuf, length, policy, nodes->maskp, nodes->size, 0) < 0){
                 perror("mbind error\n");
         } 
 	/* Disable Hugepages */
 	if (disableHuge)
-		madvise((void *)buf, length, MADV_NOHUGEPAGE);
+		madvise((void *)databuf, length, MADV_NOHUGEPAGE);
 
 	if (madvisePoison)
-		madvise((void *)buf, length,MADV_HWPOISON );
+		madvise((void *)databuf, length,MADV_HWPOISON );
 
     	gpolicy = -1;
-        if (get_mempolicy(&gpolicy, gnodes->maskp, gnodes->size, (void *)buf, MPOL_F_ADDR) < 0)
+        if (get_mempolicy(&gpolicy, gnodes->maskp, gnodes->size, (void *)databuf, MPOL_F_ADDR) < 0)
                 perror("get_mempolicy");
         if (!numa_bitmask_equal(gnodes, nodes)) {
                 printf("nodes differ %lx, %lx!\n", gnodes->maskp[0], nodes->maskp[0]);
         }
 
-	strcpy(pte_str, "");
-        addrend = ((unsigned long)buf)+length;        
-        pages = (addrend-((unsigned long)buf))/pagesize;
+        addrend = ((unsigned long)databuf)+length;        
+        pages = (addrend-((unsigned long)databuf))/pagesize;
 
         if (pages > pdcount) {
                 pdbegin = realloc(pdbegin, sizeof(page_desc_t)*pages);
@@ -354,7 +343,7 @@ int main (int argc, char **argv) {
         }
 
         req.pid = getpid();
-        req.start_vaddr = (unsigned long)buf;
+        req.start_vaddr = (unsigned long)databuf;
         req.end_vaddr = addrend;
         req.pd = pdbegin;
 
@@ -363,7 +352,7 @@ int main (int argc, char **argv) {
 
 	/*Fault in Pages */
 	if(!poll_exit)
-		hog((void *)buf, length);
+		fault_pages((void *)databuf, length);
 
 	/* Get mmap phys_addrs */
 	if ((fd = open(UVMCE_DEVICE, O_RDWR)) < 0) {                 
@@ -381,26 +370,26 @@ int main (int argc, char **argv) {
 		goto out;
 	}
 
-	process_map(pd,pdbegin, pdend, pages, buf, addrend, pagesize, mattr,
-		    nodeid, paddr, pte_str, nodeid_start, mattr_start, addr_start);
+	process_map(pd, pdbegin, pdend, 
+		    pages, (unsigned long)databuf, addrend, 
+		    pagesize, mattr, nodeid, 
+		    paddr, nodeid_start, mattr_start, addr_start);
 
-	printf("\n\tstart_vaddr\t 0x%016lx length\t 0x%x\n\tend_vaddr\t 0x%016lx pages\t %ld\n", 
-		 buf , length, addrend, pages);
+	printf("\n\tstart_vaddr\t %p length\t 0x%lx\n\tend_vaddr\t 0x%016lx pages\t %ld\n", 
+		 (void *)databuf , length, addrend, pages);
 
+	inject_uce(pd,pdbegin, pdend, pages, (unsigned long)databuf, addrend, pagesize, mattr,
+		    nodeid, paddr, nodeid_start, mattr_start, addr_start);
 
-	inject_uce(pd,pdbegin, pdend, pages, (unsigned long)buf, addrend, pagesize, mattr,
-		    nodeid, paddr, pte_str, nodeid_start, mattr_start, addr_start);
-
-	if (poll_mmr_scratch14(fd) & UCE_INJECT_SUCCESS){
+	if (poll_mmr_scratch14(fd) != UCE_INJECT_SUCCESS){
 		printf("BIOS Read of UCE Failed. Retry?\n");
 	}
-	
 	if (delay){
 		printf("Enter char to consume bad memory..");
 		getchar();
 	}
 
-	consume_it((void *)buf, length);
+	consume_it((void *)databuf, length);
 
 out:
 	close(fd);                                      

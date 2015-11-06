@@ -29,6 +29,15 @@ struct err_inj_data {
 
 
 char* get_memory_attr_str(int , int );
+long memsize(char *);
+
+unsigned long long uv_vtop(unsigned long);
+int cpu_process_setaffinity(pid_t, int);
+void fault_pages(void *, long );
+
+unsigned long poll_mmr_scratch14(int);
+char *nodestr(long );
 
 #endif /* __UVMCE_H__ */
+
 

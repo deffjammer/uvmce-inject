@@ -40,13 +40,16 @@
 #define SOFTOFFLINE  "/sys/devices/system/memory/soft_offline_page"
 #define HARDOFFLINE  "/sys/devices/system/memory/hard_offline_page"
 
-
 extern struct bitmask *numa_allocate_nodemask(void);
-static int      show_pnodes=1;
-static int      uvmce_fd;
+extern int numa_bitmask_equal(struct bitmask *, struct bitmask *);
+void get_page_map_vtop_array(page_desc_t *, page_desc_t *, page_desc_t *,
+		   	     unsigned long, unsigned long, unsigned long,
+		             unsigned int, unsigned long, unsigned long long  []);
+ 
+//static int 	show_pnodes = 0;
 static int 	delay = 0;
 static int 	manual = 0;
-static int 	pd_total= 0;
+static int      uvmce_fd;
 /*   Virt		Physical                      PTE
  * [7ffff7fb4000] -> 0x005e4b72e000 on pnode   1    0x8000005e4b72e067  MEMORY|RW|DIRTY|SHARED
  */
@@ -101,7 +104,10 @@ soft_offline_page(unsigned long long addr)
 	write(soft_offline_fd, page, strlen(page));
 
 	close(soft_offline_fd);
-}/*
+
+	return 0;
+}
+/*
  * hard page offlining for UCEs
  */
 int
@@ -134,29 +140,25 @@ hard_offline_page(unsigned long long addr)
 	write(hard_offline_fd, page, strlen(page));
 
 	close(hard_offline_fd);
+	
+	return 0;
 }
 
 
 int main (int argc, char** argv) {                                     
-	int  ret, c;
+	int   c;
 	long length;
 	int cpu = 2;
 	int disableHuge = 0;
 	int madvisePoison = 0;
 	int madviseSoftOffline = 0;
  	struct bitmask *nodes, *gnodes;
-	static char optstr[] = "kudHPSmc:";
 	int gpolicy, policy = MPOL_DEFAULT;
-	int i, repeat = 5;
-	unsigned long  flush_bytes;
-	void *vaddrmin = (void *)-1UL, *vaddrmax = NULL;
-
+	int n;
         static page_desc_t      *pdbegin=NULL;
         static size_t           pdcount=0;
-        unsigned long           mattr, addrend, pages, count, nodeid, paddr = 0;
-        unsigned long           addr_start=0, nodeid_start=-1, mattr_start=-1;
-        char                    *endp;
-        page_desc_t             *pd, *pdend;
+        unsigned long           addrend, pages, paddr = 0;
+        page_desc_t             *pd=NULL, *pdend=NULL;
         struct dlook_get_map_info req;
         unsigned int            pagesize = getpagesize();
 	int 			softoffline=0;
@@ -165,12 +167,16 @@ int main (int argc, char** argv) {
 	nodes  = numa_allocate_nodemask();
 	gnodes = numa_allocate_nodemask();
 
+	length = memsize("4k");
 
-        while (argv[1] && argv[1][0] == '-') {
-        	switch (argv[1][1]) {
-                case 'k': // Need to add this option. Causes crash from kernel fault
-                	//ioctlcmd = UVMCE_INJECT_UME;
-                	break;
+  	while ((c = getopt (argc, argv, "dHPMm:c:")) != -1){
+	    switch (c) {
+	        case 'c':
+                        cpu = atoi(optarg);
+                        break;
+	        case 'm':
+                        length = memsize(optarg);
+                        break;
                 case 'd':
                         delay=1;
                         break;
@@ -180,26 +186,18 @@ int main (int argc, char** argv) {
 		case 'P':
                         madvisePoison=1;
                         break;
-		case 'S':
-                        madviseSoftOffline=1;
-                        break;
 
-                case 's':
-                        softoffline=1;
+                case 'M':
+                        manual=1;
                         break;
 		case 'h':
 		default :
 			help();
 			break;
 		}
-		argv++;
 	}
-	if (!argv[1]) 
-		//length = memsize("100k");
-		/* Default is 1 page */
-		length = memsize("4k");
-	else
-        	length = memsize(argv[1]);
+
+	cpu_process_setaffinity(getpid(), cpu);
 
 	buf = mmap(NULL, length, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, 0, 0);
 
@@ -237,7 +235,7 @@ int main (int argc, char** argv) {
         req.pd = pdbegin;
 
 	/*Fault in Pages */
-	hog((void *)buf, length);
+	fault_pages((void *)buf, length);
 
 	/* Get mmap phys_addrs */
 	if ((uvmce_fd = open(UVMCE_DEVICE, O_RDWR)) < 0) {                 
@@ -253,15 +251,14 @@ int main (int argc, char** argv) {
 	get_page_map_vtop_array(pd, pdbegin, pdend, pages, (unsigned long)buf,
 		     addrend, pagesize, paddr, vtop_l);
 
-	printf("\n\tstart_vaddr\t 0x%016lx length\t 0x%x\n\tend_vaddr\t 0x%016lx pages\t %ld\n", 
-		 buf , length, addrend, pages);
-	int n;
+	printf("\n\tstart_vaddr\t %p length\t 0x%lx\n\tend_vaddr\t 0x%016lx pages\t %ld\n", 
+		 (void *)buf , length, addrend, pages);
+
 	for (n=0; n<pages; n++){
 		softoffline ?
 		soft_offline_page((unsigned long long)vtop_l[n]) :
 		hard_offline_page((unsigned long long)vtop_l[n]);
 	}
-out:
 	close(uvmce_fd);                                      
 	return 0;                                       
 }

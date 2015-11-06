@@ -43,12 +43,15 @@
 #define UCE_INJECT_SUCCESS 0xAC00000000000000
 
 extern struct bitmask *numa_allocate_nodemask(void);
+extern int numa_bitmask_equal(struct bitmask *, struct bitmask *);
+extern void process_map(page_desc_t *, 
+			page_desc_t *, 
+			page_desc_t *,
+			unsigned long, unsigned long, unsigned long,
+			unsigned int,  unsigned long, unsigned long,
+			unsigned long, unsigned long, unsigned long,
+			unsigned long);
 
-static int      show_phys=1;
-static int      show_holes=1;
-static int      show_libs=0;
-static int      show_pnodes=1;
-static int      show_ptes =1;
 static int      fd;
 static int 	delay = 0;
 static int 	manual = 0;
@@ -77,11 +80,9 @@ void help(){
 		"-c	: Cpu used by kernel modeuls to determine pnode \n"      \
 		"-H	: Disables HugePages\n");
 }
-static int injected=0;
-
 
 volatile unsigned int *injectedAddress = NULL;
-void inject_uce(page_desc_t      *pd,
+void inject_scrub_uce(page_desc_t      *pd,
 		page_desc_t      *pdbegin,
 		page_desc_t      *pdend,
 		unsigned long    pages,
@@ -91,7 +92,6 @@ void inject_uce(page_desc_t      *pd,
 		unsigned long    mattr,
 		unsigned long    nodeid,
 		unsigned long    paddr,
-		char             *pte_str,
 		unsigned long    nodeid_start,
 		unsigned long    mattr_start,
 		unsigned long    addr_start)
@@ -113,10 +113,10 @@ void inject_uce(page_desc_t      *pd,
 			pagesize = get_pagesize(*pd);
 			if (mattr && paddr) {
 				if ((pd_total / 2) == count){
-				sprintf(pte_str, "  0x%016lx  ", pd->pte);
-				printf("\t[%012lx] -> 0x%012lx on %s %3s  %s%s\n",
-						addr, paddr, idstr(), nodestr(nodeid),
-						pte_str, get_memory_attr_str(nodeid, mattr));
+				//sprintf(pte_str, "  0x%016lx  ", pd->pte);
+				//printf("\t[%012lx] -> 0x%012lx on %s %3s  %s%s\n",
+				//		addr, paddr, idstr(), nodestr(nodeid),
+				//		pte_str, get_memory_attr_str(nodeid, mattr));
 				injectedAddress = (unsigned int *)addr;
 				eid.addr   = paddr;
 				eid.nodeid = nodeid;
@@ -139,36 +139,29 @@ void inject_uce(page_desc_t      *pd,
 
 }
 
+
 int main (int argc, char** argv) {                                     
-	int  ret, c;
+	int c;
 	long length;
 	int cpu = 2;
 	int disableHuge = 0;
 	int madvisePoison = 0;
-	int poll_exit=0;
  	struct bitmask *nodes, *gnodes;
 	int gpolicy, policy = MPOL_DEFAULT;
-	int i, repeat = 5;
-	struct vaddr_info *vaddrs;
-	unsigned long  flush_bytes;
-	void *vaddrmin = (void *)-1UL, *vaddrmax = NULL;
-
         static page_desc_t      *pdbegin=NULL;
         static size_t           pdcount=0;
-        unsigned long           addr, mattr, addrend, pages, count, nodeid, paddr = 0;
+        unsigned long           vaddr, mattr=0, addrend=0, pages=0, nodeid=0, paddr=0;
         unsigned long           addr_start=0, nodeid_start=-1, mattr_start=-1;
-        char                    *endp;
-        page_desc_t             *pd, *pdend;
+        page_desc_t             *pd=NULL, *pdend=NULL;
         struct dlook_get_map_info req;
         unsigned int            pagesize = getpagesize();
-        char                    pte_str[20];
 
 	nodes  = numa_allocate_nodemask();
 	gnodes = numa_allocate_nodemask();
 
 	length = memsize("100k");
 
-  	while ((c = getopt (argc, argv, "dHpPMm:c:")) != -1){
+  	while ((c = getopt (argc, argv, "dHPMm:c:")) != -1){
 	    switch (c) {
 	        case 'c':
                         cpu = atoi(optarg);
@@ -181,9 +174,6 @@ int main (int argc, char** argv) {
                         break;
                 case 'H':
                         disableHuge=1;
-                        break;
-		case 'p':
-			poll_exit=1;
                         break;
 		case 'P':
                         madvisePoison=1;
@@ -199,29 +189,27 @@ int main (int argc, char** argv) {
 		}
 	}
 
-	addr =(unsigned long)mmap(NULL, length, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, 0, 0);
+	vaddr =(unsigned long)mmap(NULL, length, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, 0, 0);
 
-        if (mbind((void *)addr, length, policy, nodes->maskp, nodes->size, 0) < 0){
+        if (mbind((void *)vaddr, length, policy, nodes->maskp, nodes->size, 0) < 0){
                 perror("mbind error\n");
         } 
 	/* Disable Hugepages */
 	if (disableHuge)
-		madvise((void *)addr, length, MADV_NOHUGEPAGE);
+		madvise((void *)vaddr, length, MADV_NOHUGEPAGE);
 
 	if (madvisePoison)
-		madvise((void *)addr, length,MADV_HWPOISON );
+		madvise((void *)vaddr, length,MADV_HWPOISON );
 
     	gpolicy = -1;
-        if (get_mempolicy(&gpolicy, gnodes->maskp, gnodes->size, (void *)addr, MPOL_F_ADDR) < 0)
+        if (get_mempolicy(&gpolicy, gnodes->maskp, gnodes->size, (void *)vaddr, MPOL_F_ADDR) < 0)
                 perror("get_mempolicy");
         if (!numa_bitmask_equal(gnodes, nodes)) {
                 printf("nodes differ %lx, %lx!\n", gnodes->maskp[0], nodes->maskp[0]);
         }
 
-	strcpy(pte_str, "");
-
-        addrend = addr+length;        
-        pages = (addrend-addr)/pagesize;
+        addrend = vaddr+length;        
+        pages = (addrend-vaddr)/pagesize;
 
         if (pages > pdcount) {
                 pdbegin = realloc(pdbegin, sizeof(page_desc_t)*pages);
@@ -229,15 +217,14 @@ int main (int argc, char** argv) {
         }
 
         req.pid         = getpid();
-        req.start_vaddr = addr;
+        req.start_vaddr = vaddr;
         req.end_vaddr   = addrend;
         req.pd          = pdbegin;
 
 	cpu_process_setaffinity(getpid(), cpu);
 
 	/*Fault in Pages */
-	if( !poll_exit)
-		hog((void *)addr, length);
+	fault_pages((void *)vaddr, length);
 
 	/* Get mmap phys_addrs */
 	if ((fd = open(UVMCE_DEVICE, O_RDWR)) < 0) {                 
@@ -250,31 +237,26 @@ int main (int argc, char** argv) {
 		exit(1);                                      
 	}                                               
 
-	if (poll_exit){
-		printf("SCRATCH14 0x%lx\n", poll_mmr_scratch14(fd));
-		goto out;
-	}
 
-	process_map(pd,pdbegin, pdend, pages, addr, addrend, pagesize, mattr,
-		    nodeid, paddr, pte_str, nodeid_start, mattr_start, addr_start);
+	process_map(pd,pdbegin, pdend, pages, vaddr, addrend, pagesize, mattr,
+		    nodeid, paddr, nodeid_start, mattr_start, addr_start);
 
-	printf("\n\tstart_vaddr\t 0x%016lx length\t 0x%x\n\tend_vaddr\t 0x%016lx pages\t %ld\n", 
-		 addr , length, addrend, pages);
+	printf("\n\tstart_vaddr\t 0x%016lx length\t 0x%lx\n\tend_vaddr\t 0x%016lx pages\t %ld\n", 
+		 vaddr , length, addrend, pages);
 
 
-	inject_uce(pd,pdbegin, pdend, pages, addr, addrend, pagesize, mattr,
-		    nodeid, paddr, pte_str, nodeid_start, mattr_start, addr_start);
+	inject_scrub_uce(pd,pdbegin, pdend, pages, vaddr, addrend, pagesize, mattr,
+		    nodeid, paddr, nodeid_start, mattr_start, addr_start);
 
-	if (poll_mmr_scratch14(fd) & UCE_INJECT_SUCCESS){
-		printf("BIOS Read of UCE Failed. Retry?\n");
+	if (poll_mmr_scratch14(fd) != UCE_INJECT_SUCCESS){
+		printf("BIOS Read of UCE Failed. Retry? This probably needs fixing\n");
 	}
 	
 	if (delay){
-		printf("Enter char to memset..");
+		printf("Enter char to cont..");
 		getchar();
 	}
 
-out:
 	close(fd);                                      
 	return 0;                                       
 }

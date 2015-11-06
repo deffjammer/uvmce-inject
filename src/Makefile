@@ -1,5 +1,5 @@
 INC_DIR=../include
-CFLAGS=-g -I$(INC_DIR)
+CFLAGS=-g -I$(INC_DIR) -Wall
 LDFLAGS=-lnuma
 SRCS_2 = common.c migrate_pages.c 
 SRCS_1 = uncorrected_memory_error.c common.c  
