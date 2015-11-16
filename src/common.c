@@ -41,6 +41,7 @@
 #define UVMCE_DEVICE "/dev/uvmce"                   
 #define PAGE_SIZE (1 << 12)
 #define UCE_INJECT_SUCCESS 0xAC00000000000000
+#define COMMAND_LINE_SIZE 512
 
 int      show_phys=1;
 int      show_holes=1;
@@ -257,6 +258,49 @@ unsigned long poll_mmr_scratch14(int fd)
  	return mmr_status;	
 
 }
+unsigned long long uv_vtop(unsigned long r_vaddr, int fd)
+{
+        unsigned long           mattr, addrend, pages, nodeid, paddr = 0;
+        static page_desc_t      *pdbegin = NULL;
+	static int 		pagesize;
+        static size_t           pdcount=0;
+        page_desc_t             *pd, *pdend;
+        char                    pte_str[20];
+        struct 	dlook_get_map_info req;
+
+	pagesize = getpagesize();
+        addrend  = r_vaddr + pagesize;
+        pages    = (addrend-r_vaddr)/pagesize;
+
+        if (pages > pdcount) {
+                pdbegin = realloc(pdbegin, sizeof(page_desc_t)*pages);
+                pdcount = pages;
+        }
+
+        req.pid         = getpid();
+        req.start_vaddr = r_vaddr;
+        req.end_vaddr   = addrend;
+        req.pd          = pdbegin;
+
+	strcpy(pte_str, "");
+
+	if (ioctl(fd, UVMCE_DLOOK, &req ) < 0){        
+		exit(1);                                      
+	} 
+        for (pd=pdbegin, pdend=pd+pages; pd<pdend && r_vaddr < addrend; pd++, r_vaddr += pagesize) {
+			nodeid   = get_pnodeid(*pd);
+			paddr    = get_paddr(*pd);
+			mattr    = get_memory_attr(*pd);
+			pagesize = get_pagesize(*pd);
+			sprintf(pte_str, "  0x%016lx  ", pd->pte);
+			printf("\t[%012lx] -> 0x%012lx on %s %3s  %s%s\n",
+				r_vaddr, paddr, idstr(), nodestr(nodeid),
+				pte_str, get_memory_attr_str(nodeid, mattr));
+	}
+
+	return paddr;
+} 
+
 /*
  * get information about address from /proc/{pid}/pagemap
  */
@@ -342,4 +386,32 @@ void process_pagemap_vtop_array(
 	} 
 	return;	
 }
+
+
+int memlog_pid(void)
+{                                     
+	FILE *fp;
+        char cmd_out[COMMAND_LINE_SIZE];
+	char *run_string = NULL;
+
+	run_string =  "ps -C memlogd | grep -v 'PID' | awk -F \" \" '{print $1}' ";
+
+        /* Open the command for reading. */
+        fp = popen(run_string, "r");
+        if (fp == NULL) {
+                printf("Failed to run: %s\n", run_string );
+                return -1;
+        }
+
+        /* Read the output a line at a time - output it. */
+        if (fgets(cmd_out, sizeof(cmd_out)-1, fp) == NULL){
+        	pclose(fp);
+		return -1;
+	}
+
+        /* close */
+        pclose(fp);
+	return atoi(cmd_out);
+}
+
 

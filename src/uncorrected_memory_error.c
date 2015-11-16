@@ -59,7 +59,7 @@ extern void process_pagemap_vtop_array(page_desc_t *, page_desc_t *, page_desc_t
 extern int numa_bitmask_equal(struct bitmask *, struct bitmask *);
  
 static int      fd;
-static int 	show_pnodes = 0;
+//static int 	show_pnodes = 0;
 static int 	delay = 0;
 static int 	manual = 0;
 /*   Virt		Physical                      PTE
@@ -140,57 +140,7 @@ void inject_uce(page_desc_t      *pd,
 	}
 
 }
-unsigned long long uv_vtop(unsigned long r_vaddr)
-{
-        unsigned long           mattr, addrend, pages, nodeid, paddr = 0;
-        static page_desc_t      *pdbegin = NULL;
-	static int 		pagesize;
-        static size_t           pdcount=0;
-        page_desc_t             *pd, *pdend;
-        char                    pte_str[20];
-        struct 	dlook_get_map_info req;
-
-	pagesize = getpagesize();
-        addrend  = r_vaddr + pagesize;
-        pages    = (addrend-r_vaddr)/pagesize;
-
-        if (pages > pdcount) {
-                pdbegin = realloc(pdbegin, sizeof(page_desc_t)*pages);
-                pdcount = pages;
-        }
-
-        req.pid         = getpid();
-        req.start_vaddr = r_vaddr;
-        req.end_vaddr   = addrend;
-        req.pd          = pdbegin;
-
-	strcpy(pte_str, "");
-
-	if (ioctl(fd, UVMCE_DLOOK, &req ) < 0){        
-		exit(1);                                      
-	} 
-        for (pd=pdbegin, pdend=pd+pages; pd<pdend && r_vaddr < addrend; pd++, r_vaddr += pagesize) {
-			nodeid   = get_pnodeid(*pd);
-			paddr    = get_paddr(*pd);
-			mattr    = get_memory_attr(*pd);
-			pagesize = get_pagesize(*pd);
-			sprintf(pte_str, "  0x%016lx  ", pd->pte);
-			printf("\t[%012lx] -> 0x%012lx on %s %3s  %s%s\n",
-				r_vaddr, paddr, idstr(), nodestr(nodeid),
-				pte_str, get_memory_attr_str(nodeid, mattr));
-	}
-
-	return paddr;
-} 
-
-/*
- * Older glibc headers don't have the si_addr_lsb field in the siginfo_t
- *  structure ... ugly hack to get it
- */
-struct morebits {
-        void    *addr;
-	short   lsb;
-};                                                                          
+                                                                        
 
 /*
 	sig will be SIGBUS
@@ -254,7 +204,7 @@ void memory_error_recover(int sig, siginfo_t *si, void *v)
 	//memcpy(si->si_addr, backup_location, size)// Use backup
         memset((void *)databuf, 'A', psize); //Just filling in data
 	//printf("recovered data:%x\n", *databuf);
-        phys = uv_vtop((unsigned long long)m->addr);
+        phys = uv_vtop((unsigned long long)m->addr, fd);
         printf("Recovery allocated new page at physical 0x%016llx\n", phys);
 
 	exit(1);

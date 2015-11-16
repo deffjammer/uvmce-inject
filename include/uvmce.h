@@ -27,11 +27,18 @@ struct err_inj_data {
         unsigned int flags;
 };                              
 
-
+/*
+ * Older glibc headers don't have the si_addr_lsb field in the siginfo_t
+ *  structure ... ugly hack to get it
+ */
+struct morebits {
+        void    *addr;
+	short   lsb;
+};  
 char* get_memory_attr_str(int , int );
 long memsize(char *);
 
-unsigned long long uv_vtop(unsigned long);
+unsigned long long uv_vtop(unsigned long, int);
 int cpu_process_setaffinity(pid_t, int);
 void fault_pages(void *, long );
 

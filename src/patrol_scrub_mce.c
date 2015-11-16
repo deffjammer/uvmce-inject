@@ -24,6 +24,7 @@
 #include <fcntl.h>
 #include <stdarg.h>
 #include <string.h>
+#include <signal.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/file.h>
@@ -42,6 +43,7 @@
 #define PAGE_SIZE (1 << 12)
 #define UCE_INJECT_SUCCESS 0xAC00000000000000
 
+extern int memlog_pid(void);
 extern struct bitmask *numa_allocate_nodemask(void);
 extern int numa_bitmask_equal(struct bitmask *, struct bitmask *);
 extern void process_map(page_desc_t *, 
@@ -54,6 +56,7 @@ extern void process_map(page_desc_t *,
 
 static int      fd;
 static int 	delay = 0;
+static int 	scrub_sig = 1;
 static int 	manual = 0;
 static int 	pd_total= 0;
 //	                 Physical                      PTE
@@ -61,7 +64,8 @@ static int 	pd_total= 0;
 
 struct err_inj_data eid;
 
-int buf[PAGE_SIZE] __attribute__ ((aligned(128)));
+//int buf[PAGE_SIZE] __attribute__ ((aligned(128)));
+char *databuf;
 
 struct vaddr_info {
 	void		*vaddr;
@@ -113,10 +117,7 @@ void inject_scrub_uce(page_desc_t      *pd,
 			pagesize = get_pagesize(*pd);
 			if (mattr && paddr) {
 				if ((pd_total / 2) == count){
-				//sprintf(pte_str, "  0x%016lx  ", pd->pte);
-				//printf("\t[%012lx] -> 0x%012lx on %s %3s  %s%s\n",
-				//		addr, paddr, idstr(), nodestr(nodeid),
-				//		pte_str, get_memory_attr_str(nodeid, mattr));
+				printf("\t[%012lx] -> 0x%012lx on %ld\n", addr, paddr, nodeid);
 				injectedAddress = (unsigned int *)addr;
 				eid.addr   = paddr;
 				eid.nodeid = nodeid;
@@ -138,6 +139,49 @@ void inject_scrub_uce(page_desc_t      *pd,
 	}
 
 }
+/*
+ * "Recover" from the error by allocating a new page and mapping
+ * it at the same virtual address as the page we lost. Fill with
+ * the same (trivial) contents.
+ */
+void memory_error_recover(int sig, siginfo_t *si, void *v)
+{
+        struct morebits *m = (struct morebits *)&si->si_addr;
+        char               *newbuf;
+	static int 	   psize;
+	unsigned long long phys;
+
+	psize = getpagesize();
+
+        printf("memory_error_recover: sig=%d si=%p v=%p\n", sig, si, v);
+        printf("Platform memory error at 0x%p\n", si->si_addr);
+        printf("addr = %p lsb=%d\n", m->addr, m->lsb);
+        newbuf = mmap((void *)m->addr, psize, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_FIXED|MAP_ANONYMOUS|MAP_PRIVATE, -1, 0);
+
+        if ((char *)newbuf == MAP_FAILED) {
+                fprintf(stderr, "Can't get a single page of memory!\n");
+                exit(1);
+        }
+        if (newbuf != m->addr) {
+                fprintf(stderr, "Could not allocate at original virtual address\n");
+                exit(1);
+        }
+        databuf = newbuf;
+	//printf("newbuf data:%x\n", *newbuf);
+        //memcpy(databuf, si->si_addr,  psize); //Fails cuz No data at recovered vaddr
+	//memcpy(si->si_addr, backup_location, size)// Use backup
+        memset((void *)databuf, 'A', psize); //Just filling in data
+	//printf("recovered data:%x\n", *databuf);
+        phys = uv_vtop((unsigned long long)m->addr, fd);
+        printf("Recovery allocated new page at physical 0x%016llx\n", phys);
+
+	exit(1);
+}
+
+struct sigaction recover_act = {
+        .sa_sigaction = memory_error_recover,
+        .sa_flags = SA_SIGINFO,
+};
 
 
 int main (int argc, char** argv) {                                     
@@ -255,6 +299,15 @@ int main (int argc, char** argv) {
 	if (delay){
 		printf("Enter char to cont..");
 		getchar();
+	}
+
+	/* Signal memlog to kick patrol scrub */
+	if (scrub_sig){
+		int mpid;
+		if ((mpid = memlog_pid()) > 0)
+			kill(mpid,SIGUSR1);
+			printf("MEMLOG SIGUSR1 sent, patrol srub started.\nPress char to exit..%d\n", mpid);
+			getchar();
 	}
 
 	close(fd);                                      
