@@ -103,7 +103,8 @@ void inject_uce(page_desc_t      *pd,
 		char             *pte_str,
 		unsigned long    nodeid_start,
 		unsigned long    mattr_start,
-		unsigned long    addr_start)
+		unsigned long    addr_start,
+		int              mce_opt)
 {
         int count = 0;
 	eid.cpu = sched_getcpu();
@@ -146,7 +147,7 @@ void inject_uce(page_desc_t      *pd,
 		getchar();
 	}	
 	if(!manual){
-	if (ioctl(fd, UVMCE_INJECT_UCE_AT_ADDR, &eid ) < 0){        
+	if (ioctl(fd, mce_opt, &eid ) < 0){        
                 printf("Failed to INJECT_UCE\n");
                 exit(1);
 	}
@@ -363,7 +364,8 @@ int main (int argc, char** argv) {
 
 
 	inject_uce(pd,pdbegin, pdend, pages, (unsigned long)buf, addrend, pagesize, mattr,
-		    nodeid, paddr, pte_str, nodeid_start, mattr_start, addr_start);
+		    nodeid, paddr, pte_str, nodeid_start, 
+		    mattr_start, addr_start, UVMCE_INJECT_UCE_AT_ADDR);
 
 	if (poll_mmr_scratch14(fd) & UCE_INJECT_SUCCESS){
 		printf("BIOS Read of UCE Failed. Retry?\n");

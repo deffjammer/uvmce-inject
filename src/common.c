@@ -256,6 +256,65 @@ unsigned long poll_mmr_scratch14(int fd)
  	return mmr_status;	
 
 }
+unsigned long long uv_vtop(unsigned long r_vaddr)
+{
+        unsigned long           mattr, addrend, pages, count, nodeid, paddr = 0;
+        unsigned long           addr_start=0, nodeid_start=-1, mattr_start=-1;
+        char                    *endp;
+        static page_desc_t      *pdbegin = NULL;
+	static int 		pagesize;
+        static size_t           pdcount=0;
+        page_desc_t             *pd, *pdend;
+        struct dlook_get_map_info req;
+        char                    pte_str[20];
+
+	pagesize = getpagesize();
+        addrend = r_vaddr + pagesize;
+        pages = (addrend-r_vaddr)/pagesize;
+
+        if (pages > pdcount) {
+                pdbegin = realloc(pdbegin, sizeof(page_desc_t)*pages);
+                pdcount = pages;
+        }
+
+        req.pid = getpid();
+        req.start_vaddr = r_vaddr;
+        req.end_vaddr = addrend;
+        req.pd = pdbegin;
+
+	strcpy(pte_str, "");
+
+	if (ioctl(fd, UVMCE_DLOOK, &req ) < 0){        
+		exit(1);                                      
+	} 
+        count = 0;
+        for (pd=pdbegin, pdend=pd+pages; pd<pdend && r_vaddr < addrend; pd++, r_vaddr += pagesize) {
+		if (pd->flags & PD_HOLE) {
+			pagesize = pd->pte;
+			mattr = 0;
+			nodeid = -1;
+		} else {
+			nodeid = get_pnodeid(*pd);
+			paddr = get_paddr(*pd);
+			if (nodeid == INVALID_NODE) {
+				nodeid = 0;
+			}
+			mattr = get_memory_attr(*pd);
+			pagesize = get_pagesize(*pd);
+		}
+		if (mattr && paddr) {
+			sprintf(pte_str, "  0x%016lx  ", pd->pte);
+			printf("\t[%012lx] -> 0x%012lx on %s %3s  %s%s\n",
+				r_vaddr, paddr, idstr(), nodestr(nodeid),
+				pte_str, get_memory_attr_str(nodeid, mattr));
+		}
+		count++;
+	}
+	pd_total = count;
+
+	return paddr;
+} 
+
 /*
  * get information about address from /proc/{pid}/pagemap
  */

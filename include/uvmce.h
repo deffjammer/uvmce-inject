@@ -12,6 +12,7 @@
  
 #define UVMCE_INJECT_UME          _IOR(UVMCE_MAGIC, 1 , char* ) 
 #define UVMCE_INJECT_UCE_AT_ADDR  _IOW(UVMCE_MAGIC, 2 , char *)
+#define UVMCE_INJECT_CE_AT_ADDR   _IOW(UVMCE_MAGIC, 2 , char *)
 #define UVMCE_PATROL_SCRUB_UCE    _IOW(UVMCE_MAGIC, 3 , char *)
 #define UVMCE_DLOOK               _IOW(UVMCE_MAGIC, 4 , char *)
 #define UVMCE_POLL_SCRATCH14      _IOW(UVMCE_MAGIC, 5 , char *)
@@ -29,6 +30,7 @@ struct err_inj_data {
 
 
 char* get_memory_attr_str(int , int );
+unsigned long long uv_vtop(unsigned long );
 
 #endif /* __UVMCE_H__ */
 
