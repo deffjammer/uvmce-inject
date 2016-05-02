@@ -120,14 +120,15 @@ unsigned long uvmce_inject_correctable_at_addr(unsigned long phys_addr, int pnod
 	printk(KERN_INFO "Physical Addr:  %#018lx on node %d\n", phys_addr, pnode);
 
 	poisoned_b_addr = phys_addr | CE_BITS; 
-	printk (KERN_INFO "CE Bit set:    %#018lx \n",poisoned_b_addr ); 
+	printk (KERN_INFO "CE Bit set:     %#018lx \n",poisoned_b_addr ); 
 
-	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH14, poisoned_b_addr);
+	//uv_write_global_mmr64(pnode, UV_MMR_SCRATCH14, poisoned_b_addr);
 	mb();
 	
 	printk (KERN_INFO "MMR SCRATCH14:  %#018lx \n",uv_read_global_mmr64(pnode, UV_MMR_SCRATCH14)); 
 
-	uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
+
+	//uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
 	mb();
 	last_pnode=pnode;
 	
