@@ -1,12 +1,8 @@
 /*
- * gcc -I../include/ uncorrected_memory_error.c -o  uce -lnuma
- * insmod ../kernel/uv_mce_inject.ko
- * ./uce -d <size of mmap>
- *
- * 1 - write SCRATCH14 to inject the error.
- * 2 - wait for SCRATCH14[63:56] == 0xac
- * 3 - write (or read) data from the injected address 
- * 
+ *  Combined Tool to inject different types of memory errors
+ *  - Uncorrected Memory Error
+ *  - Correctable Memory Error
+ *  - Patrol Scrub Error
  */
 
 
@@ -24,6 +20,7 @@
 #include <fcntl.h>
 #include <stdarg.h>
 #include <string.h>
+#include <getopt.h>
 #include <signal.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -39,9 +36,8 @@
 #define max(a,b)        ({ typeof(a) _a = a; typeof(b) _b = b; _a > _b ? _a : _b; })
 
 #define INVALID_NODE -1
-#define UVMCE_DEVICE "/dev/uvmce"                   
 #define PAGE_SIZE (1 << 12)
-#define UCE_INJECT_SUCCESS 0xAC00000000000000
+#define UCE_INJECT_SUCCESS 0xac
 
 extern struct bitmask *numa_allocate_nodemask(void);
 
@@ -67,11 +63,18 @@ struct bitmask {
 
 
 void help(){
-	printf("ume [Hdm:c <cpu>  <size>]\n" \
-		"-d	: Waits before memset so process map can be examined \n" \
-		"-m	: Won't inject poison addr from kernel. \n"   \
-		"-c	: Cpu used by kernel modeuls to determine pnode \n"      \
-		"-H	: Disables HugePages\n");
+	printf("einj hc:e: <cpu> \n" \
+		"--cpu:c\t	: Cpu used by kernel modules to determine pnode \n"      \
+		"--errortype:c	: Type of error to inject.\n"      \
+		"		 1 = Uncorrected Memory Error\n"      \
+		"		 2 = Correctable Memory Error\n"      \
+		"		 3 = Patrol Scrub Uncorrected Memory Error\n"      \
+		"	         Default is 1, Uncorrected Memory Error\n"      \
+		"Flags		:\n" \
+		"--delay	: Waits before memset so process map can be examined \n" \
+		"--manual	: Won't inject poison addr from kernel. \n"   \
+		"--disableHuge	: Disables HugePages\n");
+	exit(1);
 }
 
 /*volatile?
@@ -80,17 +83,17 @@ void help(){
 char *injecteddata = NULL;
 void consume_it(void *map, long length)
 {
-	unsigned int dead;
 
 	/* read/consume data by printing it out
 	 * Doing Both causes crash.  One or the other
-	 //dead = *injectedAddress;
+	 unsigned int dead;
+	 dead = *injectedAddress;
 	 */
 	printf("dead data:%x\n",*injecteddata);
 }
 
 static int injected=0;
-void inject_uce(page_desc_t      *pd,
+void uv_inject(page_desc_t      *pd,
 		page_desc_t      *pdbegin,
 		page_desc_t      *pdend,
 		unsigned long    pages,
@@ -103,7 +106,8 @@ void inject_uce(page_desc_t      *pd,
 		char             *pte_str,
 		unsigned long    nodeid_start,
 		unsigned long    mattr_start,
-		unsigned long    addr_start)
+		unsigned long    addr_start,
+		int              mce_opt)
 {
         int count = 0;
 	eid.cpu = sched_getcpu();
@@ -146,72 +150,12 @@ void inject_uce(page_desc_t      *pd,
 		getchar();
 	}	
 	if(!manual){
-	if (ioctl(fd, UVMCE_INJECT_UCE_AT_ADDR, &eid ) < 0){        
+	if (ioctl(fd, mce_opt, &eid ) < 0){        
                 printf("Failed to INJECT_UCE\n");
                 exit(1);
 	}
 	}
-
 }
-
-unsigned long long uv_vtop(unsigned long r_vaddr)
-{
-        unsigned long           mattr, addrend, pages, count, nodeid, paddr = 0;
-        unsigned long           addr_start=0, nodeid_start=-1, mattr_start=-1;
-        char                    *endp;
-        static page_desc_t      *pdbegin = NULL;
-	static int 		pagesize;
-        static size_t           pdcount=0;
-        page_desc_t             *pd, *pdend;
-        struct dlook_get_map_info req;
-        char                    pte_str[20];
-
-	pagesize = getpagesize();
-        addrend = r_vaddr + pagesize;
-        pages = (addrend-r_vaddr)/pagesize;
-
-        if (pages > pdcount) {
-                pdbegin = realloc(pdbegin, sizeof(page_desc_t)*pages);
-                pdcount = pages;
-        }
-
-        req.pid = getpid();
-        req.start_vaddr = r_vaddr;
-        req.end_vaddr = addrend;
-        req.pd = pdbegin;
-
-	strcpy(pte_str, "");
-
-	if (ioctl(fd, UVMCE_DLOOK, &req ) < 0){        
-		exit(1);                                      
-	} 
-        count = 0;
-        for (pd=pdbegin, pdend=pd+pages; pd<pdend && r_vaddr < addrend; pd++, r_vaddr += pagesize) {
-		if (pd->flags & PD_HOLE) {
-			pagesize = pd->pte;
-			mattr = 0;
-			nodeid = -1;
-		} else {
-			nodeid = get_pnodeid(*pd);
-			paddr = get_paddr(*pd);
-			if (nodeid == INVALID_NODE) {
-				nodeid = 0;
-			}
-			mattr = get_memory_attr(*pd);
-			pagesize = get_pagesize(*pd);
-		}
-		if (mattr && paddr) {
-			sprintf(pte_str, "  0x%016lx  ", pd->pte);
-			printf("\t[%012lx] -> 0x%012lx on %s %3s  %s%s\n",
-				r_vaddr, paddr, idstr(), nodestr(nodeid),
-				pte_str, get_memory_attr_str(nodeid, mattr));
-		}
-		count++;
-	}
-	pd_total = count;
-
-	return paddr;
-} 
 
 /*
  * Older glibc headers don't have the si_addr_lsb field in the siginfo_t
@@ -280,14 +224,29 @@ void memory_error_recover(int sig, siginfo_t *si, void *v)
         }
         buf = newbuf;
 	//printf("newbuf data:%x\n", *newbuf);
-        // memcpy(buf, si->si_addr,  psize); //Fails cuz No data at recovered vaddr
+        //memcpy(buf, si->si_addr,  psize); //Fails cuz No data at recovered vaddr
 	//memcpy(si->si_addr, backup_location, size)// Use backup
         memset((void *)buf, 'A', psize); //Just filling in data
 	printf("recovered data:%x\n", *buf);
         phys = uv_vtop((unsigned long long)m->addr);
-        printf("Recovery allocated new page at physical 0x%016lx\n", phys);
+        printf("Recovery allocated new page at physical 0x%016llx\n", phys);
 
 	exit(1);
+}
+unsigned long get_etype(int opt)
+{
+
+	switch(opt) {
+	case 1:
+		return UVMCE_INJECT_UCE_AT_ADDR;
+	case 2:
+		return UVMCE_INJECT_CE_AT_ADDR;
+	case 3:
+		return UVMCE_PATROL_SCRUB_UCE;
+	default:
+		return UVMCE_INJECT_UCE_AT_ADDR;
+	}
+
 }
 
 struct sigaction recover_act = {
@@ -296,71 +255,89 @@ struct sigaction recover_act = {
 };
 int main (int argc, char** argv) {                                     
 	int  ret, c;
-	long length;
-	int cpu = 2;
-	int disableHuge = 0;
-	int madvisePoison = 0;
-	int poll_exit=0;
- 	struct bitmask *nodes, *gnodes;
-	static char optstr[] = "kudHPmc:";
-	int gpolicy, policy = MPOL_DEFAULT;
 	int i, repeat = 5;
-	unsigned long  flush_bytes;
+	int cpu = 2;
+	static int errortype = 1;
+	static int verbose = 1;
+	static int disableHuge = 0;
+	static int madvisePoison = 0;
+	static int poll_exit=0;
+	static long length;
+ 	struct bitmask *nodes, *gnodes;
+	int gpolicy;
+	unsigned long error_opt;
+
 	void *vaddrmin = (void *)-1UL, *vaddrmax = NULL;
 
-        static page_desc_t      *pdbegin=NULL;
         static size_t           pdcount=0;
         unsigned long           mattr, addrend, pages, count, nodeid, paddr = 0;
         unsigned long           addr_start=0, nodeid_start=-1, mattr_start=-1;
-        char                    *endp;
-        page_desc_t             *pd, *pdend;
-        struct dlook_get_map_info req;
         unsigned int            pagesize = getpagesize();
         char                    pte_str[20];
 
+        struct dlook_get_map_info req;
+        static page_desc_t        *pdbegin=NULL;
+        page_desc_t               *pd, *pdend;
+
+	length = memsize("100k");
 	nodes  = numa_allocate_nodemask();
 	gnodes = numa_allocate_nodemask();
 
+	while (1)
+	{
+		static struct option long_options[] =
+		{
+		  {"verbose",       no_argument,       &verbose, 1},
+		  {"delay",         no_argument,       &delay, 1},
+		  {"disableHuge",   no_argument,       &disableHuge, 1},
+		  {"poll",          no_argument,       &poll_exit, 1},
+		  {"madvisePoison", no_argument,       &madvisePoison, 1},
+		  {"manual",        no_argument,       &manual, 1},
+		  {"cpu",           required_argument, 0, 'c'},
+		  {"errortype",     required_argument, 0, 'e'},
+		  {"help",          no_argument,       0, 'h'},
+		  {"length",        required_argument, 0, 'l'}
+		};
+		/* getopt_long stores the option index here. */
+		int option_index = 0;
 
-        while (argv[1] && argv[1][0] == '-') {
-        	switch (argv[1][1]) {
-                case 'k': // Need to add this option. Causes crash from kernel fault
-                	//ioctlcmd = UVMCE_INJECT_UME;
-                	break;
-                case 'c':
-                        cpu = atoi(optarg);
-                        break;
-                case 'd':
-                        delay=1;
-                        break;
-                case 'H':
-                        disableHuge=1;
-                        break;
-		case 'p':
-			poll_exit=1;
-                        break;
-		case 'P':
-                        madvisePoison=1;
-                        break;
+		c = getopt_long (argc, argv, "hc:e:l:",
+			       long_options, &option_index);
 
-                case 'm':
-                        manual=1;
-                        break;
-		case 'h':
-		default :
-			help();
-			break;
+		/* Detect the end of the options. */
+		if (c == -1)
+		break;
+
+		switch (c)
+		{
+			case 'c':
+			  printf ("option -c with value `%s'\n", optarg);
+                          cpu = atoi(optarg);
+			  break;
+			case 'e':
+			  printf ("option -e with value `%s'\n", optarg);
+                          errortype = atoi(optarg);
+			  break;
+			case 'h':
+			  help();
+			case 'l':
+			  /* Not exposed */
+			  printf ("option -l with value `%s'\n", optarg);
+			  length = memsize("optarg");
+			  break;
+			case '?':
+			  /* getopt_long already printed an error message. */
+			  exit(-1);
 		}
-		argv++;
 	}
-	if (!argv[1]) 
-		length = memsize("100k");
-	else
-        	length = memsize(argv[1]);
+
+	cpu_process_setaffinity(getpid(), cpu);
+
+	error_opt = get_etype(errortype);
 
 	buf = mmap(NULL, length, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, 0, 0);
 
-        if (mbind((void *)buf, length, policy, nodes->maskp, nodes->size, 0) < 0){
+        if (mbind((void *)buf, length,  MPOL_DEFAULT, nodes->maskp, nodes->size, 0) < 0){
                 perror("mbind error\n");
         } 
 	/* Disable Hugepages */
@@ -391,7 +368,6 @@ int main (int argc, char** argv) {
         req.end_vaddr = addrend;
         req.pd = pdbegin;
 
-	//cpu_process_affinity(getpid(), eid.cpu);
 	sigaction(SIGBUS, &recover_act, NULL);
 
 	/*Fault in Pages */
@@ -421,8 +397,9 @@ int main (int argc, char** argv) {
 		 buf , length, addrend, pages);
 
 
-	inject_uce(pd,pdbegin, pdend, pages, (unsigned long)buf, addrend, pagesize, mattr,
-		    nodeid, paddr, pte_str, nodeid_start, mattr_start, addr_start);
+	uv_inject(pd,pdbegin, pdend, pages, (unsigned long)buf, addrend, pagesize, mattr,
+		    nodeid, paddr, pte_str, nodeid_start, 
+		    mattr_start, addr_start, error_opt);
 
 	if (poll_mmr_scratch14(fd) & UCE_INJECT_SUCCESS){
 		printf("BIOS Read of UCE Failed. Retry?\n");
