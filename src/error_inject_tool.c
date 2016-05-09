@@ -155,7 +155,6 @@ void uv_inject(page_desc_t      *pd,
                 exit(1);
 	}
 	}
-
 }
 
 /*
