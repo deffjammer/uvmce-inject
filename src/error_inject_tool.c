@@ -63,17 +63,21 @@ struct bitmask {
 
 
 void help(){
-	printf("einj hc:e: <cpu> \n" \
+	printf("einj_tool\n" \
 		"--cpu:c\t	: Cpu used by kernel modules to determine pnode \n"      \
 		"--errortype:c	: Type of error to inject.\n"      \
 		"		 1 = Uncorrected Memory Error\n"      \
 		"		 2 = Correctable Memory Error\n"      \
 		"		 3 = Patrol Scrub Uncorrected Memory Error\n"      \
 		"	         Default is 1, Uncorrected Memory Error\n"      \
+		"\n" \
 		"Flags		:\n" \
+		"--help		: Print this message.\n" \
 		"--delay	: Waits before memset so process map can be examined \n" \
 		"--manual	: Won't inject poison addr from kernel. \n"   \
-		"--disableHuge	: Disables HugePages\n");
+		"--disableHuge	: Disables HugePages\n" \
+		"--poll		: Poll the MMR Status register\n");
+
 	exit(1);
 }
 
@@ -311,11 +315,9 @@ int main (int argc, char** argv) {
 		switch (c)
 		{
 			case 'c':
-			  printf ("option -c with value `%s'\n", optarg);
                           cpu = atoi(optarg);
 			  break;
 			case 'e':
-			  printf ("option -e with value `%s'\n", optarg);
                           errortype = atoi(optarg);
 			  break;
 			case 'h':
@@ -410,8 +412,9 @@ int main (int argc, char** argv) {
 		getchar();
 	}
 
-	consume_it((void *)buf, length);
-
+	if (error_opt !=  UVMCE_PATROL_SCRUB_UCE){
+		consume_it((void *)buf, length);
+	}
 out:
 	close(fd);                                      
 	return 0;                                       
