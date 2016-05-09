@@ -43,7 +43,7 @@
 #define UV_MMR_SMI_SCRATCH_2  0x605d8 
 #define UV_MMR_SMI_WALK_3     0x100 
 #define UCE_BITS              0x8000000000000000
-#define CE_BITS              0x4000000000000000
+#define CE_BITS               0x4000000000000000
 #define PS_UCE_BITS           0x7000000000000000
 
 #define SMM_EXT_REQUEST_INJECT_MEM_CE           0x00
@@ -56,7 +56,6 @@
 MODULE_LICENSE("GPL");
 MODULE_INFO(supported, "external");
 
-#define UVMCE_NAME "uvmce"
 
 static int last_pnode = 0;
 
@@ -88,10 +87,7 @@ static struct miscdevice uvmce_miscdev = {
 unsigned long uvmce_inject_uce_at_addr(unsigned long phys_addr, int pnode )
 {
 	unsigned long poisoned_b_addr=-1;
-  	//int pnode, node;  
-	//pnode = uv_blade_to_pnode(uv_cpu_to_blade_id(cpu));
 
-	//node = cpu_to_node(cpu);
         printk(KERN_INFO "Proc: %s\n", current->comm);
 	printk(KERN_INFO "Physical Addr:  %#018lx on node %d\n", phys_addr, pnode);
 
@@ -112,23 +108,20 @@ unsigned long uvmce_inject_uce_at_addr(unsigned long phys_addr, int pnode )
 unsigned long uvmce_inject_correctable_at_addr(unsigned long phys_addr, int pnode )
 {
 	unsigned long poisoned_b_addr=-1;
-  	//int pnode, node;  
-	//pnode = uv_blade_to_pnode(uv_cpu_to_blade_id(cpu));
 
-	//node = cpu_to_node(cpu);
         printk(KERN_INFO "Proc: %s\n", current->comm);
 	printk(KERN_INFO "Physical Addr:  %#018lx on node %d\n", phys_addr, pnode);
 
 	poisoned_b_addr = phys_addr | CE_BITS; 
 	printk (KERN_INFO "CE Bit set:     %#018lx \n",poisoned_b_addr ); 
 
-	//uv_write_global_mmr64(pnode, UV_MMR_SCRATCH14, poisoned_b_addr);
+	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH14, poisoned_b_addr);
 	mb();
 	
 	printk (KERN_INFO "MMR SCRATCH14:  %#018lx \n",uv_read_global_mmr64(pnode, UV_MMR_SCRATCH14)); 
 
 
-	//uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
+	uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
 	mb();
 	last_pnode=pnode;
 	
@@ -137,10 +130,7 @@ unsigned long uvmce_inject_correctable_at_addr(unsigned long phys_addr, int pnod
 }unsigned long uvmce_patrol_scrub_uce_inject(unsigned long phys_addr, int pnode )
 {
 	unsigned long poisoned_b_addr=-1;
-  	//int pnode, node;  
-	//pnode = uv_blade_to_pnode(uv_cpu_to_blade_id(cpu));
 
-	//node = cpu_to_node(cpu);
         printk(KERN_INFO "Proc: %s\n", current->comm);
 	printk(KERN_INFO "Physical Addr:  %#018lx on node %d\n", phys_addr, pnode);
 

@@ -7,6 +7,9 @@
  *  _IOWR  an ioctl with both write and read parameters.
  */
 
+#define UVMCE_NAME "uvmce"
+#define UVMCE_DEVICE "/dev/uvmce"
+
 #define UVMCE_MAGIC 's'                                                   
  
 #define UVMCE_INJECT_UME          _IOR(UVMCE_MAGIC, 1 , char* ) 

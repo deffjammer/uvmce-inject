@@ -1,12 +1,8 @@
 /*
- * gcc -I../include/ uncorrected_memory_error.c -o  uce -lnuma
- * insmod ../kernel/uv_mce_inject.ko
- * ./uce -d <size of mmap>
- *
- * 1 - write SCRATCH14 to inject the error.
- * 2 - wait for SCRATCH14[63:56] == 0xac
- * 3 - write (or read) data from the injected address 
- * 
+ *  Combined Tool to inject different types of memory errors
+ *  - Uncorrected Memory Error
+ *  - Correctable Memory Error
+ *  - Patrol Scrub Error
  */
 
 
@@ -40,9 +36,8 @@
 #define max(a,b)        ({ typeof(a) _a = a; typeof(b) _b = b; _a > _b ? _a : _b; })
 
 #define INVALID_NODE -1
-#define UVMCE_DEVICE "/dev/uvmce"                   
 #define PAGE_SIZE (1 << 12)
-#define UCE_INJECT_SUCCESS 0xAC00000000000000
+#define UCE_INJECT_SUCCESS 0xac
 
 extern struct bitmask *numa_allocate_nodemask(void);
 
@@ -79,6 +74,7 @@ void help(){
 		"--delay	: Waits before memset so process map can be examined \n" \
 		"--manual	: Won't inject poison addr from kernel. \n"   \
 		"--disableHuge	: Disables HugePages\n");
+	exit(1);
 }
 
 /*volatile?
@@ -229,7 +225,7 @@ void memory_error_recover(int sig, siginfo_t *si, void *v)
         }
         buf = newbuf;
 	//printf("newbuf data:%x\n", *newbuf);
-        // memcpy(buf, si->si_addr,  psize); //Fails cuz No data at recovered vaddr
+        //memcpy(buf, si->si_addr,  psize); //Fails cuz No data at recovered vaddr
 	//memcpy(si->si_addr, backup_location, size)// Use backup
         memset((void *)buf, 'A', psize); //Just filling in data
 	printf("recovered data:%x\n", *buf);
@@ -263,12 +259,13 @@ int main (int argc, char** argv) {
 	int i, repeat = 5;
 	int cpu = 2;
 	static int errortype = 1;
+	static int verbose = 1;
 	static int disableHuge = 0;
 	static int madvisePoison = 0;
 	static int poll_exit=0;
 	static long length;
  	struct bitmask *nodes, *gnodes;
-	int gpolicy, policy = MPOL_DEFAULT;
+	int gpolicy;
 	unsigned long error_opt;
 
 	void *vaddrmin = (void *)-1UL, *vaddrmax = NULL;
@@ -291,6 +288,7 @@ int main (int argc, char** argv) {
 	{
 		static struct option long_options[] =
 		{
+		  {"verbose",       no_argument,       &verbose, 1},
 		  {"delay",         no_argument,       &delay, 1},
 		  {"disableHuge",   no_argument,       &disableHuge, 1},
 		  {"poll",          no_argument,       &poll_exit, 1},
@@ -323,7 +321,6 @@ int main (int argc, char** argv) {
 			  break;
 			case 'h':
 			  help();
-			  break;
 			case 'l':
 			  /* Not exposed */
 			  printf ("option -l with value `%s'\n", optarg);
@@ -335,11 +332,13 @@ int main (int argc, char** argv) {
 		}
 	}
 
+	cpu_process_setaffinity(getpid(), cpu);
+
 	error_opt = get_etype(errortype);
 
 	buf = mmap(NULL, length, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, 0, 0);
 
-        if (mbind((void *)buf, length, policy, nodes->maskp, nodes->size, 0) < 0){
+        if (mbind((void *)buf, length,  MPOL_DEFAULT, nodes->maskp, nodes->size, 0) < 0){
                 perror("mbind error\n");
         } 
 	/* Disable Hugepages */
@@ -370,7 +369,6 @@ int main (int argc, char** argv) {
         req.end_vaddr = addrend;
         req.pd = pdbegin;
 
-	//cpu_process_affinity(getpid(), eid.cpu);
 	sigaction(SIGBUS, &recover_act, NULL);
 
 	/*Fault in Pages */
