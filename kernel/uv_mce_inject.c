@@ -39,7 +39,29 @@
 
 //BMC:r001i01b> mmr harp0.0 0x2d0b00 0x8000000100100000
 //BMC:r001i01b> mmr harp0.0 0x605d8  0x100
-#define UV_MMR_SCRATCH14      0x2d0b00 
+
+#define UV3_MMR_SCRATCH14      0x2d0b00 
+#define UV4_MMR_SCRATCH14      0xb0b00 
+int uv_type;
+
+unsigned long UV_MMR_SCRATCH14(void)
+{
+
+ 	if (uv_type == 3)
+		return UV3_MMR_SCRATCH14;
+	else if (uv_type == 4)
+		return UV4_MMR_SCRATCH14;
+	else 
+		return UV3_MMR_SCRATCH14;
+}
+
+//Diff
+//#define UV4_SCRATCH14 ULL_T(0xb0b00)
+//#define UV3_SCRATCH14 ULL_T(0x2d0b00)
+//same
+//#define UV4_EXTIO_INT2 ULL_T(0x605d8)
+//#define UV3_EXTIO_INT2 ULL_T(0x605d8)
+
 #define UV_MMR_SMI_SCRATCH_2  0x605d8 
 #define UV_MMR_SMI_WALK_3     0x100 
 #define UCE_BITS              0x8000000000000000
@@ -94,10 +116,10 @@ unsigned long uvmce_inject_uce_at_addr(unsigned long phys_addr, int pnode )
 	poisoned_b_addr = phys_addr | (1UL <<63);
 	printk (KERN_INFO "UCE Bit set:    %#018lx \n",poisoned_b_addr ); 
 
-	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH14, poisoned_b_addr);
+	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH14(), poisoned_b_addr);
 	mb();
 	
-	printk (KERN_INFO "MMR SCRATCH14:  %#018lx \n",uv_read_global_mmr64(pnode, UV_MMR_SCRATCH14)); 
+	printk (KERN_INFO "MMR SCRATCH14:  %#018lx \n",uv_read_global_mmr64(pnode, UV_MMR_SCRATCH14())); 
 
 	uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
 	mb();
@@ -115,10 +137,10 @@ unsigned long uvmce_inject_correctable_at_addr(unsigned long phys_addr, int pnod
 	poisoned_b_addr = phys_addr | CE_BITS; 
 	printk (KERN_INFO "CE Bit set:     %#018lx \n",poisoned_b_addr ); 
 
-	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH14, poisoned_b_addr);
+	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH14(), poisoned_b_addr);
 	mb();
 	
-	printk (KERN_INFO "MMR SCRATCH14:  %#018lx \n",uv_read_global_mmr64(pnode, UV_MMR_SCRATCH14)); 
+	printk (KERN_INFO "MMR SCRATCH14:  %#018lx \n",uv_read_global_mmr64(pnode, UV_MMR_SCRATCH14())); 
 
 
 	uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
@@ -137,10 +159,10 @@ unsigned long uvmce_inject_correctable_at_addr(unsigned long phys_addr, int pnod
 	poisoned_b_addr = phys_addr | PS_UCE_BITS; 
 	printk (KERN_INFO "PS UCE Bit set:   %#018lx \n",poisoned_b_addr ); 
 
-	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH14, poisoned_b_addr);
+	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH14(), poisoned_b_addr);
 	mb();
 	
-	printk (KERN_INFO "MMR SCRATCH14:  %#018lx \n",uv_read_global_mmr64(pnode, UV_MMR_SCRATCH14)); 
+	printk (KERN_INFO "MMR SCRATCH14:  %#018lx \n",uv_read_global_mmr64(pnode, UV_MMR_SCRATCH14())); 
 
 	//uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
 	mb();
@@ -151,7 +173,7 @@ unsigned long uvmce_inject_correctable_at_addr(unsigned long phys_addr, int pnod
 unsigned long poll_mmr_scratch(void)
 {
  	unsigned long read_m;
-	read_m = uv_read_global_mmr64(last_pnode, UV_MMR_SCRATCH14);
+	read_m = uv_read_global_mmr64(last_pnode, UV_MMR_SCRATCH14());
 	printk (KERN_INFO "POLL SCRATCH14: %#018lx \n",read_m ); 
 	return read_m;
 } 
@@ -193,11 +215,11 @@ unsigned long uvmce_inject_ume(void)
 	poisoned_b_addr = phys_addr | (1UL <<63);
 	printk ("Poison PB  \t%#018lx \n",poisoned_b_addr ); 
 
-	read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH14);
+	read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH14());
 	printk ("READ1 MMR SCRATCH14  \t%#018lx \n",read_m ); 
 
-	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH14, poisoned_b_addr);
-        read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH14);
+	uv_write_global_mmr64(pnode, UV_MMR_SCRATCH14(), poisoned_b_addr);
+        read_m = uv_read_global_mmr64(pnode, UV_MMR_SCRATCH14());
 	printk ("READ2 MMR  \t%#018lx \n",read_m ); 
 	uv_write_global_mmr64(pnode, UV_MMR_SMI_SCRATCH_2, UV_MMR_SMI_WALK_3);
 
@@ -221,7 +243,6 @@ static long uvmce_ioctl(struct file *f, unsigned int cmd, unsigned long data)
         struct err_inj_data eid;
 	unsigned long mmr_status;
 	int ret = 0; 
-
 	switch (cmd)
 	{
 		case UVMCE_INJECT_UME:
@@ -230,16 +251,19 @@ static long uvmce_ioctl(struct file *f, unsigned int cmd, unsigned long data)
 		    break;
 		case UVMCE_INJECT_UCE_AT_ADDR:
                     ret = copy_from_user(&eid, (unsigned long *)data, sizeof(struct err_inj_data));
+		    uv_type = eid.uv_type;
                     eid.addr = uvmce_inject_uce_at_addr(eid.addr, eid.cpu);
                     ret = copy_to_user((unsigned long *)data, &eid, sizeof(struct err_inj_data));
 		    break;
 		case UVMCE_PATROL_SCRUB_UCE:
                     ret = copy_from_user(&eid, (unsigned long *)data, sizeof(struct err_inj_data));
-                    eid.addr = uvmce_patrol_scrub_uce_inject(eid.addr, eid.cpu);
+       		    uv_type = eid.uv_type;
+             	    eid.addr = uvmce_patrol_scrub_uce_inject(eid.addr, eid.cpu);
                     ret = copy_to_user((unsigned long *)data, &eid, sizeof(struct err_inj_data));
 		    break;
 		case UVMCE_INJECT_CE_AT_ADDR:
                     ret = copy_from_user(&eid, (unsigned long *)data, sizeof(struct err_inj_data));
+       		    uv_type = eid.uv_type;
                     eid.addr = uvmce_inject_correctable_at_addr(eid.addr, eid.cpu);
                     ret = copy_to_user((unsigned long *)data, &eid, sizeof(struct err_inj_data));
 		    break;
@@ -283,7 +307,8 @@ uvmce_exit(void)
 #define is_pte_uc(p)		(pte_val(p) & _PAGE_PCD)
 #define nasid_to_cnodeid(n)	n
 #define dlook_pfn_to_nid(a)	(pfn_valid(a) ? pfn_to_nid(a) : -1)
-#define dlook_pfn_to_pnid(a)	(pfn_valid(a) ? pfn_to_nid(a) : -1)
+#define dlook_pfn_to_pnid(a)   (pfn_valid(a) ? uv_node_to_pnode(pfn_to_nid(a)) : -1)
+//#define dlook_pfn_to_pnid(a)	(pfn_valid(a) ? pfn_to_nid(a) : -1)
 
 
 static page_desc_t *add_pd_hole(page_desc_t *pd, unsigned long bytes, unsigned long *gbytes)

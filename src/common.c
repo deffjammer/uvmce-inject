@@ -348,4 +348,29 @@ unsigned long long vtop(unsigned long long addr, int proc_id)
 	return ((pinfo & 0x007fffffffffffffull) << 12) + (addr & (pagesize - 1));
 }
 
+int get_uv_type()
+{
+	FILE 	*f_product_name;
+	char    uv_type[50];
 
+        if ((f_product_name = fopen("/var/run/sgi_uv/dmi/product_name", "r")) == NULL){
+                printf("Error getting UV system type, enter via command line -p.");
+        }
+
+        if (fscanf(f_product_name, "%s", &uv_type) != 1){ 
+                perror(uv_type);
+        }
+	printf("UV System Type: %s\n ", uv_type);
+
+	if (strstr(uv_type, "UV3") != NULL) {
+		return 3;
+    	}
+	else if (strstr(uv_type, "UV4") != NULL) {
+		return 4;
+    	}
+	else {
+                printf("Error getting UV system type, enter via command line -p.");
+		return -1;
+	}
+	fclose(f_product_name);
+}

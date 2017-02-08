@@ -5,7 +5,7 @@
  *  - Patrol Scrub Error
  */
 
-
+/* Needs uv_mce_inject and einj */
 
 #define _GNU_SOURCE 1
 #include <sched.h>
@@ -39,8 +39,16 @@
 #define PAGE_SIZE (1 << 12)
 #define UCE_INJECT_SUCCESS 0xac
 
+#define EINJ_ETYPE "/sys/kernel/debug/apei/einj/error_type"
+#define EINJ_ADDR "/sys/kernel/debug/apei/einj/param1"
+#define EINJ_MASK "/sys/kernel/debug/apei/einj/param2"
+#define EINJ_NOTRIGGER "/sys/kernel/debug/apei/einj/notrigger"
+#define EINJ_DOIT "/sys/kernel/debug/apei/einj/error_inject"
+
+
 extern struct bitmask *numa_allocate_nodemask(void);
 
+static char     *progname;
 static int      show_phys=1;
 static int      show_holes=1;
 static int      show_libs=0;
@@ -80,6 +88,31 @@ void help(){
 
 	exit(1);
 }
+static void wfile(char *file, unsigned long long val)
+{
+        FILE *fp = fopen(file, "w");
+
+        if (fp == NULL) {
+                fprintf(stderr, "%s: cannot open '%s'\n", progname, file);
+                exit(1);
+        }
+        fprintf(fp, "0x%llx\n", val);
+	printf ("%s: 0x%llx\n", file, val);
+        if (fclose(fp) == EOF) {
+                fprintf(stderr, "%s: write error on '%s'\n", progname, file);
+                exit(1);
+        }
+}
+
+static void inject_uc(unsigned long long addr, int notrigger)
+{
+        wfile(EINJ_ETYPE, 0x10);
+        wfile(EINJ_ADDR, addr);
+        wfile(EINJ_MASK, ~0x0ul);
+        wfile(EINJ_NOTRIGGER, notrigger);
+        wfile(EINJ_DOIT, 1);
+}
+
 
 /*volatile?
  * static?
@@ -111,13 +144,11 @@ void uv_inject(page_desc_t      *pd,
 		unsigned long    nodeid_start,
 		unsigned long    mattr_start,
 		unsigned long    addr_start,
-		int              mce_opt,
-		int 		 uv_type)
+		int              mce_opt)
 {
         int count = 0;
 	eid.cpu = sched_getcpu();
-	eid.uv_type = uv_type;
-	
+
         for (pd=pdbegin, pdend=pd+pages; pd<pdend && addr < addrend; pd++, addr += pagesize) {
 		if (pd->flags & PD_HOLE) {
 			pagesize = pd->pte;
@@ -156,10 +187,7 @@ void uv_inject(page_desc_t      *pd,
 		getchar();
 	}	
 	if(!manual){
-	if (ioctl(fd, mce_opt, &eid ) < 0){        
-                printf("Failed to INJECT_UCE\n");
-                exit(1);
-	}
+		inject_uc(eid.addr, 0 /*int notrigger*/);
 	}
 }
 
@@ -259,11 +287,12 @@ struct sigaction recover_act = {
         .sa_sigaction = memory_error_recover,
         .sa_flags = SA_SIGINFO,
 };
+
+
 int main (int argc, char** argv) {                                     
 	int  ret, c;
 	int i, repeat = 5;
 	int cpu = 2;
-	int uv_type;
 	static int errortype = 1;
 	static int verbose = 1;
 	static int disableHuge = 0;
@@ -289,6 +318,8 @@ int main (int argc, char** argv) {
 	length = memsize("100k");
 	nodes  = numa_allocate_nodemask();
 	gnodes = numa_allocate_nodemask();
+	progname = argv[0];
+
 
 	while (1)
 	{
@@ -335,8 +366,6 @@ int main (int argc, char** argv) {
 			  exit(-1);
 		}
 	}
-
-	uv_type = get_uv_type();	
 
 	cpu_process_setaffinity(getpid(), cpu);
 
@@ -392,10 +421,6 @@ int main (int argc, char** argv) {
 		exit(1);                                      
 	}                                               
 
-	if (poll_exit){
-		printf("SCRATCH14 0x%lx\n", poll_mmr_scratch14(fd));
-		goto out;
-	}
 
 	process_map(pd,pdbegin, pdend, pages, buf, addrend, pagesize, mattr,
 		    nodeid, paddr, pte_str, nodeid_start, mattr_start, addr_start);
@@ -406,11 +431,8 @@ int main (int argc, char** argv) {
 
 	uv_inject(pd,pdbegin, pdend, pages, (unsigned long)buf, addrend, pagesize, mattr,
 		    nodeid, paddr, pte_str, nodeid_start, 
-		    mattr_start, addr_start, error_opt, uv_type);
+		    mattr_start, addr_start, error_opt);
 
-	if (poll_mmr_scratch14(fd) & UCE_INJECT_SUCCESS){
-		printf("BIOS Read of UCE Failed. Retry?\n");
-	}
 	
 	if (delay){
 		printf("Enter char to consume bad memory..");
